@@ -12,6 +12,10 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
+import android.graphics.Rect;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
@@ -26,12 +30,16 @@ import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
@@ -42,6 +50,7 @@ import java.util.Locale;
 public class MainActivity extends Activity {
     public static final String ACTION_QUICK_EXPENSE = "com.enyu.autoledger.action.QUICK_EXPENSE";
     public static final String ACTION_QUICK_INCOME = "com.enyu.autoledger.action.QUICK_INCOME";
+    public static final String ACTION_EDIT_WIDGET_PHOTO = "com.enyu.autoledger.action.EDIT_WIDGET_PHOTO";
     private static final int REQUEST_WIDGET_IMAGE = 1901;
 
     private LinearLayout root;
@@ -92,14 +101,8 @@ public class MainActivity extends Activity {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == REQUEST_WIDGET_IMAGE && resultCode == RESULT_OK && data != null && data.getData() != null) {
             Uri uri = data.getData();
-            try {
-                final int flags = data.getFlags() & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-                getContentResolver().takePersistableUriPermission(uri, flags & Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            } catch (Exception ignored) { }
             AppSettings.setString(this, AppSettings.KEY_WIDGET_IMAGE_URI, uri.toString());
-            try { CarrierPhotoWidgetProvider.updateAll(this); } catch (Exception ignored) { }
-            Toast.makeText(this, "已設定桌面小工具圖片", Toast.LENGTH_SHORT).show();
-            showSettings();
+            showWidgetImageCropDialog(uri);
         }
     }
 
@@ -110,6 +113,8 @@ public class MainActivity extends Activity {
             root.postDelayed(() -> showManual("expense"), 120);
         } else if (ACTION_QUICK_INCOME.equals(action)) {
             root.postDelayed(() -> showManual("income"), 120);
+        } else if (ACTION_EDIT_WIDGET_PHOTO.equals(action)) {
+            root.postDelayed(() -> showWidgetImageSettingsDialog(), 160);
         }
     }
 
@@ -229,11 +234,13 @@ public class MainActivity extends Activity {
         row.setPadding(dp(12), dp(10), dp(12), dp(10));
         LinearLayout texts = new LinearLayout(this);
         texts.setOrientation(LinearLayout.VERTICAL);
-        int budget = AppSettings.getMonthlyBudget(this);
+        int baseBudget = AppSettings.getMonthlyBudget(this);
+        int extra = AppSettings.getMonthlyExtra(this);
+        int budget = AppSettings.getMonthlyUsableBudget(this);
         int spent = TransactionStore.monthExpense(this);
         int remain = Math.max(0, budget - spent);
         texts.addView(text("本月可花預算", 16, TEXT, true));
-        texts.addView(text("圓形圖只看支出：預算 " + TransactionStore.money(budget) + "，還能花 " + TransactionStore.money(remain), 13, MUTED, false));
+        texts.addView(text("基本 " + TransactionStore.money(baseBudget) + (extra > 0 ? "＋加回 " + TransactionStore.money(extra) : "") + "，還能花 " + TransactionStore.money(remain), 13, MUTED, false));
         row.addView(texts, new LinearLayout.LayoutParams(0, -2, 1));
         Button edit = smallChip("修改", CHIP, ORANGE);
         edit.setOnClickListener(v -> showBudgetDialog());
@@ -245,7 +252,7 @@ public class MainActivity extends Activity {
         final AlertDialog dialog = new AlertDialog.Builder(this).create();
         LinearLayout panel = dialogPanel(dp(30));
         panel.addView(text("設定本月可花預算", 21, TEXT, true), marginLp(-1, -2, 0, 0, 0, dp(8)));
-        panel.addView(text("這只會影響圓形圖的本月可花額度；收入會加到最上面的全部餘額，不會把圓形圖預算變大。", 14, TEXT, false), marginLp(-1, -2, 0, 0, 0, dp(12)));
+        panel.addView(text("每個月圓形圖會重新從這個預算開始計算；收入預設只加到上方全部餘額，若是獎金或中獎，可在新增收入時勾選加回本月可用預算。", 14, TEXT, false), marginLp(-1, -2, 0, 0, 0, dp(12)));
         final EditText input = edit("例如：10000", true);
         input.setInputType(InputType.TYPE_CLASS_NUMBER);
         input.setText(String.valueOf(AppSettings.getMonthlyBudget(this)));
@@ -310,7 +317,7 @@ public class MainActivity extends Activity {
             box.addView(perm, marginLp(-1, -2, 0, dp(12), 0, 0));
         }
 
-        int budgetForMonth = AppSettings.getMonthlyBudget(this);
+        int budgetForMonth = AppSettings.getMonthlyUsableBudget(this);
         int balance = TransactionStore.totalBalance(this);
         LinearLayout balanceCard = new LinearLayout(this);
         balanceCard.setOrientation(LinearLayout.VERTICAL);
@@ -318,7 +325,7 @@ public class MainActivity extends Activity {
         balanceCard.setBackground(roundGradient(ORANGE, 0xFFFF9A2E, dp(16)));
         TextView b1 = text("剩餘餘額  ◉", 14, 0xFFFFFFFF, true);
         TextView b2 = text(TransactionStore.money(balance), 32, 0xFFFFFFFF, true);
-        TextView b3 = text("全部餘額＝預算＋收入－支出｜本月預算 " + TransactionStore.money(budgetForMonth) + "，點此修改", 12, 0xFFFFF6EC, false);
+        TextView b3 = text("全部餘額＝預算＋收入－支出｜本月可用 " + TransactionStore.money(budgetForMonth) + "，點此修改", 12, 0xFFFFF6EC, false);
         balanceCard.addView(b1);
         balanceCard.addView(b2);
         balanceCard.addView(b3);
@@ -332,7 +339,7 @@ public class MainActivity extends Activity {
         chartCard.setGravity(Gravity.CENTER_VERTICAL);
         int monthExpense = TransactionStore.monthExpense(this);
         int monthIncome = TransactionStore.monthIncome(this);
-        int budget = Math.max(1, AppSettings.getMonthlyBudget(this));
+        int budget = Math.max(1, AppSettings.getMonthlyUsableBudget(this));
         int remaining = Math.max(0, budget - monthExpense);
         DonutChartView donut = new DonutChartView(this);
         donut.setDarkMode(isDarkMode());
@@ -652,6 +659,22 @@ public class MainActivity extends Activity {
         box.addView(recentTitle);
         addRecentChips(box, startIncome, categoryInput, merchantInput);
 
+        final Switch addIncomeToBudget = new Switch(this);
+        if (startIncome) {
+            LinearLayout bonusRow = new LinearLayout(this);
+            bonusRow.setOrientation(LinearLayout.HORIZONTAL);
+            bonusRow.setGravity(Gravity.CENTER_VERTICAL);
+            bonusRow.setPadding(dp(14), dp(10), dp(10), dp(10));
+            bonusRow.setBackground(round(isDarkMode() ? 0xFF172538 : 0xFFEFFAFF, dp(22), BORDER));
+            LinearLayout bonusTexts = new LinearLayout(this);
+            bonusTexts.setOrientation(LinearLayout.VERTICAL);
+            bonusTexts.addView(text("把這筆收入加回本月可用預算", 14, TEXT, true));
+            bonusTexts.addView(text("例如中獎、獎金：不只加到總餘額，也讓圓形圖可用額度增加", 12, MUTED, false));
+            bonusRow.addView(bonusTexts, new LinearLayout.LayoutParams(0, -2, 1));
+            bonusRow.addView(addIncomeToBudget);
+            box.addView(bonusRow, marginLp(-1, -2, 0, dp(10), 0, dp(14)));
+        }
+
         Button save = bigSave("✓  確認新增");
         save.setOnClickListener(v -> {
             String amountText = amountInput.getText().toString().trim().replace(",", "");
@@ -669,7 +692,12 @@ public class MainActivity extends Activity {
             if (merchant.isEmpty()) merchant = income ? category : category;
             Transaction tx = new Transaction(selectedTime[0], amount, income ? "income" : "expense", "手動新增", merchant, category, note, "manual-" + selectedTime[0] + "-" + System.currentTimeMillis());
             TransactionStore.add(this, tx);
-            Toast.makeText(this, "已新增" + (income ? "收入 " : "支出 ") + TransactionStore.money(amount), Toast.LENGTH_SHORT).show();
+            if (income && addIncomeToBudget.isChecked()) {
+                AppSettings.addMonthlyExtra(this, amount);
+                Toast.makeText(this, "已新增收入，並加回本月可用預算", Toast.LENGTH_SHORT).show();
+            } else {
+                Toast.makeText(this, "已新增" + (income ? "收入 " : "支出 ") + TransactionStore.money(amount), Toast.LENGTH_SHORT).show();
+            }
             showHome();
         });
         box.addView(save, marginLp(-1, dp(58), 0, dp(18), 0, dp(24)));
@@ -782,7 +810,8 @@ public class MainActivity extends Activity {
         Button b = smallChip(text, bg, fg);
         b.setTextSize(13);
         b.setGravity(Gravity.CENTER);
-        b.setSingleLine(false);
+        b.setSingleLine(true);
+        b.setMaxLines(1);
         b.setMinHeight(dp(50));
         b.setPadding(dp(2), 0, dp(2), 0);
         return b;
@@ -845,7 +874,7 @@ public class MainActivity extends Activity {
         int expense = TransactionStore.expenseBetween(this, start, end);
         int income = TransactionStore.incomeBetween(this, start, end);
         int balance = income - expense;
-        int budget = Math.max(1, AppSettings.getMonthlyBudget(this) * reportMonthFactor());
+        int budget = Math.max(1, AppSettings.getMonthlyUsableBudget(this) * reportMonthFactor());
 
         int mainValue;
         int remainValue;
@@ -1118,43 +1147,23 @@ public class MainActivity extends Activity {
 
 
     private String widgetImageSubtitle() {
-        String uri = AppSettings.getString(this, AppSettings.KEY_WIDGET_IMAGE_URI, "");
-        int h = AppSettings.getWidgetImageHeight(this);
-        return (uri == null || uri.trim().isEmpty() ? "尚未設定圖片" : "已設定圖片") + "｜圖片區域 " + h + "dp";
+        String file = AppSettings.getString(this, AppSettings.KEY_WIDGET_IMAGE_FILE, "");
+        return (file == null || file.trim().isEmpty() ? "尚未設定圖片" : "已設定並裁切圖片") + "｜點小工具圖片也可回來修改";
     }
 
     private void showWidgetImageSettingsDialog() {
         final AlertDialog dialog = new AlertDialog.Builder(this).create();
         LinearLayout panel = dialogPanel(dp(30));
         panel.addView(text("圖片小工具設定", 21, TEXT, true), marginLp(-1, -2, 0, 0, 0, dp(8)));
-        panel.addView(text("這是第三種桌面小工具：上方顯示自訂圖片，中間顯示載具條碼，下方顯示餘額與支出 / 收入按鈕。", 14, TEXT, false), marginLp(-1, -2, 0, 0, 0, dp(12)));
+        panel.addView(text("選一張手機相簿圖片後，可以預覽裁切成固定 4:3 區塊。桌面小工具會固定版面，不會因手機寬度不同把按鈕擠歪。", 14, TEXT, false), marginLp(-1, -2, 0, 0, 0, dp(12)));
 
         TextView state = text(widgetImageSubtitle(), 14, MUTED, false);
         state.setPadding(dp(14), dp(10), dp(14), dp(10));
         state.setBackground(round(CHIP, dp(18), BORDER));
         panel.addView(state, marginLp(-1, -2, 0, 0, 0, dp(12)));
 
-        panel.addView(text("圖片區域大小", 15, TEXT, true), marginLp(-1, -2, 0, 0, 0, dp(8)));
-        LinearLayout heights = wrapRow();
-        int current = AppSettings.getWidgetImageHeight(this);
-        int[] values = new int[]{60, 76, 96, 118};
-        String[] labels = new String[]{"小", "中", "大", "很大"};
-        for (int i = 0; i < values.length; i++) {
-            final int value = values[i];
-            Button b = smallChip((current == value ? "✓ " : "") + labels[i], current == value ? 0xFFE6F8FF : CHIP, current == value ? TEAL : TEXT);
-            b.setOnClickListener(v -> {
-                AppSettings.setWidgetImageHeight(this, value);
-                try { CarrierPhotoWidgetProvider.updateAll(this); } catch (Exception ignored) { }
-                Toast.makeText(this, "已改圖片區域大小", Toast.LENGTH_SHORT).show();
-                dialog.dismiss();
-                showWidgetImageSettingsDialog();
-            });
-            heights.addView(b, chipLp());
-        }
-        panel.addView(heights, marginLp(-1, -2, 0, 0, 0, dp(14)));
-
         LinearLayout actions = dialogActionsRow();
-        Button choose = bigAction("選擇圖片", 0xFF42C7E8, 0xFF4D8DFF);
+        Button choose = bigAction("選手機相簿圖片", 0xFF42C7E8, 0xFF4D8DFF);
         Button clear = pill("清除圖片", CHIP, EXPENSE_RED);
         actions.addView(choose, marginLp(0, dp(52), 0, 0, dp(6), 0, 1));
         actions.addView(clear, marginLp(0, dp(52), dp(6), 0, 0, 0, 1));
@@ -1168,15 +1177,15 @@ public class MainActivity extends Activity {
         panel.addView(bottom);
 
         choose.setOnClickListener(v -> {
-            Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            Intent intent = new Intent(Intent.ACTION_PICK, android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
             intent.setType("image/*");
-            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+            Intent chooser = Intent.createChooser(intent, "選擇小工具圖片");
             dialog.dismiss();
-            startActivityForResult(intent, REQUEST_WIDGET_IMAGE);
+            startActivityForResult(chooser, REQUEST_WIDGET_IMAGE);
         });
         clear.setOnClickListener(v -> {
             AppSettings.setString(this, AppSettings.KEY_WIDGET_IMAGE_URI, "");
+            AppSettings.setString(this, AppSettings.KEY_WIDGET_IMAGE_FILE, "");
             try { CarrierPhotoWidgetProvider.updateAll(this); } catch (Exception ignored) { }
             Toast.makeText(this, "已清除小工具圖片", Toast.LENGTH_SHORT).show();
             dialog.dismiss();
@@ -1187,9 +1196,145 @@ public class MainActivity extends Activity {
         showCustomDialog(dialog, panel);
     }
 
+    private Bitmap decodeWidgetSource(Uri uri) {
+        try {
+            InputStream is = getContentResolver().openInputStream(uri);
+            if (is == null) return null;
+            BitmapFactory.Options opts = new BitmapFactory.Options();
+            opts.inJustDecodeBounds = true;
+            BitmapFactory.decodeStream(is, null, opts);
+            try { is.close(); } catch (Exception ignored) { }
+            int sample = 1;
+            int max = Math.max(opts.outWidth, opts.outHeight);
+            while (max / sample > 1600) sample *= 2;
+            BitmapFactory.Options opts2 = new BitmapFactory.Options();
+            opts2.inSampleSize = Math.max(1, sample);
+            opts2.inPreferredConfig = Bitmap.Config.ARGB_8888;
+            InputStream is2 = getContentResolver().openInputStream(uri);
+            Bitmap bm = BitmapFactory.decodeStream(is2, null, opts2);
+            try { if (is2 != null) is2.close(); } catch (Exception ignored) { }
+            return bm;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private Bitmap cropWidgetBitmap(Bitmap src, float cx, float cy, float zoom) {
+        if (src == null) return null;
+        int sw = src.getWidth();
+        int sh = src.getHeight();
+        float aspect = 4f / 3f;
+        float baseW = Math.min(sw, sh * aspect);
+        float baseH = baseW / aspect;
+        zoom = Math.max(1f, Math.min(3f, zoom));
+        float cw = baseW / zoom;
+        float ch = baseH / zoom;
+        float centerX = Math.max(0f, Math.min(1f, cx)) * sw;
+        float centerY = Math.max(0f, Math.min(1f, cy)) * sh;
+        float left = centerX - cw / 2f;
+        float top = centerY - ch / 2f;
+        if (left < 0) left = 0;
+        if (top < 0) top = 0;
+        if (left + cw > sw) left = sw - cw;
+        if (top + ch > sh) top = sh - ch;
+        Rect srcRect = new Rect(Math.round(left), Math.round(top), Math.round(left + cw), Math.round(top + ch));
+        Bitmap out = Bitmap.createBitmap(1000, 750, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(out);
+        canvas.drawColor(Color.TRANSPARENT);
+        canvas.drawBitmap(src, srcRect, new Rect(0, 0, 1000, 750), null);
+        return out;
+    }
+
+    private void refreshCropPreview(ImageView preview, Bitmap src, float[] cx, float[] cy, float[] zoom) {
+        try {
+            Bitmap crop = cropWidgetBitmap(src, cx[0], cy[0], zoom[0]);
+            if (crop != null) preview.setImageBitmap(crop);
+        } catch (Exception ignored) { }
+    }
+
+    private String saveWidgetPhoto(Bitmap bitmap) {
+        if (bitmap == null) return "";
+        try {
+            File f = new File(getFilesDir(), "autoledger_widget_photo.png");
+            FileOutputStream fos = new FileOutputStream(f);
+            bitmap.compress(Bitmap.CompressFormat.PNG, 92, fos);
+            fos.flush();
+            fos.close();
+            return f.getAbsolutePath();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private void showWidgetImageCropDialog(Uri uri) {
+        Bitmap src = decodeWidgetSource(uri);
+        if (src == null) {
+            Toast.makeText(this, "讀不到這張圖片，請改從相簿選一張圖片", Toast.LENGTH_LONG).show();
+            showSettings();
+            return;
+        }
+        final AlertDialog dialog = new AlertDialog.Builder(this).create();
+        LinearLayout panel = dialogPanel(dp(30));
+        panel.addView(text("裁切小工具圖片", 21, TEXT, true), marginLp(-1, -2, 0, 0, 0, dp(4)));
+        panel.addView(text("固定 4:3 區塊。用下方按鈕移動或放大，預覽看到的就是桌面小工具會顯示的區塊。", 13, MUTED, false), marginLp(-1, -2, 0, 0, 0, dp(10)));
+        ImageView preview = new ImageView(this);
+        preview.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        preview.setBackground(round(CHIP, dp(22), BORDER));
+        panel.addView(preview, marginLp(-1, dp(190), 0, 0, 0, dp(10)));
+        final float[] cx = new float[]{0.5f};
+        final float[] cy = new float[]{0.5f};
+        final float[] zoom = new float[]{1.0f};
+        refreshCropPreview(preview, src, cx, cy, zoom);
+
+        String[][] rows = new String[][]{{"↖", "↑", "↗"}, {"←", "放大", "→"}, {"↙", "↓", "縮小"}};
+        for (String[] rowLabels : rows) {
+            LinearLayout row = dialogActionsRow();
+            for (String label : rowLabels) {
+                Button b = smallChip(label, CHIP, TEXT);
+                b.setOnClickListener(v -> {
+                    String t = ((Button) v).getText().toString();
+                    float step = 0.08f / zoom[0];
+                    if (t.contains("左") || t.equals("←") || t.equals("↖") || t.equals("↙")) cx[0] -= step;
+                    if (t.contains("右") || t.equals("→") || t.equals("↗") || t.equals("↘")) cx[0] += step;
+                    if (t.contains("↑") || t.equals("↖") || t.equals("↗")) cy[0] -= step;
+                    if (t.contains("↓") || t.equals("↙") || t.equals("↘")) cy[0] += step;
+                    if (t.contains("放大")) zoom[0] = Math.min(3f, zoom[0] + 0.2f);
+                    if (t.contains("縮小")) zoom[0] = Math.max(1f, zoom[0] - 0.2f);
+                    cx[0] = Math.max(0f, Math.min(1f, cx[0]));
+                    cy[0] = Math.max(0f, Math.min(1f, cy[0]));
+                    refreshCropPreview(preview, src, cx, cy, zoom);
+                });
+                row.addView(b, marginLp(0, dp(42), dp(3), dp(3), dp(3), dp(3), 1));
+            }
+            panel.addView(row);
+        }
+
+        LinearLayout actions = dialogActionsRow();
+        Button cancel = pill("取消", CHIP, TEXT);
+        Button save = bigSave("✓ 儲存圖片");
+        actions.addView(cancel, marginLp(0, dp(52), 0, dp(10), dp(6), 0, 1));
+        actions.addView(save, marginLp(0, dp(52), dp(6), dp(10), 0, 0, 1));
+        panel.addView(actions);
+        cancel.setOnClickListener(v -> { dialog.dismiss(); showSettings(); });
+        save.setOnClickListener(v -> {
+            Bitmap crop = cropWidgetBitmap(src, cx[0], cy[0], zoom[0]);
+            String path = saveWidgetPhoto(crop);
+            if (path.isEmpty()) {
+                Toast.makeText(this, "儲存圖片失敗，請換一張圖試試", Toast.LENGTH_LONG).show();
+                return;
+            }
+            AppSettings.setString(this, AppSettings.KEY_WIDGET_IMAGE_FILE, path);
+            try { CarrierPhotoWidgetProvider.updateAll(this); } catch (Exception ignored) { }
+            Toast.makeText(this, "已設定小工具圖片", Toast.LENGTH_SHORT).show();
+            dialog.dismiss();
+            showSettings();
+        });
+        showCustomDialog(dialog, panel);
+    }
+
 
     private void showWidgetInfoDialog() {
-        showRoundedInfoDialog("桌面小工具", "V19 有三種桌面小工具：\n\n1. 簡易記帳小工具：顯示餘額、今日花費，點「支出／收入」快速新增。\n\n2. 載具＋記帳小工具：顯示載具條碼、餘額、今日花費、輸入金額入口。\n\n3. 圖片＋載具＋記帳小工具：最上面顯示你自訂的圖片，中間顯示載具條碼，下方顯示餘額與「支出／收入」。這個版本沒有「點我輸入金額」那一格。", "知道了", null, "圖片設定", v -> showWidgetImageSettingsDialog());
+        showRoundedInfoDialog("桌面小工具", "V20 有三種桌面小工具：\n\n1. 簡易記帳小工具：顯示餘額、今日花費，點「支出／收入」快速新增。\n\n2. 載具＋記帳小工具：顯示載具條碼、餘額、今日花費、輸入金額入口。\n\n3. 圖片＋載具＋記帳小工具：最上方顯示你裁切好的圖片，中間顯示載具條碼，下方顯示餘額與支出 / 收入。點小工具圖片可回到 App 修改圖片。", "知道了", null, "圖片設定", v -> showWidgetImageSettingsDialog());
     }
 
 
@@ -1594,7 +1739,7 @@ public class MainActivity extends Activity {
         advanced.addView(featureRow("月底預估花費", "依照目前花費速度推估月底可能花多少"));
         box.addView(advanced);
 
-        TextView version = text("AutoLedger V19", 12, MUTED, false);
+        TextView version = text("AutoLedger V20", 12, MUTED, false);
         version.setGravity(Gravity.CENTER);
         version.setPadding(0, dp(16), 0, dp(10));
         box.addView(version);
@@ -1706,6 +1851,8 @@ public class MainActivity extends Activity {
         b.setTextSize(16);
         b.setTypeface(Typeface.DEFAULT_BOLD);
         b.setAllCaps(false);
+        b.setSingleLine(true);
+        b.setMaxLines(1);
         b.setBackground(roundGradient(c1, c2, dp(22)));
         return b;
     }
@@ -1717,6 +1864,8 @@ public class MainActivity extends Activity {
         b.setTextSize(18);
         b.setTypeface(Typeface.DEFAULT_BOLD);
         b.setAllCaps(false);
+        b.setSingleLine(true);
+        b.setMaxLines(1);
         b.setBackground(roundGradient(0xFFFF624F, 0xFFFF7A45, dp(28)));
         return b;
     }
@@ -1728,6 +1877,8 @@ public class MainActivity extends Activity {
         b.setTextColor(fg);
         b.setTypeface(Typeface.DEFAULT_BOLD);
         b.setAllCaps(false);
+        b.setSingleLine(true);
+        b.setMaxLines(1);
         b.setBackground(round(bg, dp(24), BORDER));
         return b;
     }
@@ -1738,6 +1889,8 @@ public class MainActivity extends Activity {
         b.setTextColor(fg);
         b.setTextSize(13);
         b.setAllCaps(false);
+        b.setSingleLine(true);
+        b.setMaxLines(1);
         b.setBackground(round(bg, dp(20), BORDER));
         b.setMinHeight(dp(44));
         return b;
@@ -1829,9 +1982,8 @@ public class MainActivity extends Activity {
     }
 
     private void showOnboarding() {
-        showRoundedInfoDialog("歡迎使用自動記帳 V19", "這版新增 / 優化：\n\n1. 新增圖片＋載具＋記帳桌面小工具。\n2. 可在設定中選圖片，並調整小工具圖片區域大小。\n3. 圖片小工具保留載具、餘額、支出與收入，拿掉輸入金額欄。\n4. 三條線側邊選單新增欠款紀錄，可記誰欠你錢，也能扣還款。\n5. 防重複、CSV、備份、還原、清除資料都保留。", "我知道了", v -> AppSettings.setBool(this, AppSettings.KEY_ONBOARDED, true), "通知用途", v -> showNotificationPurpose());
+        showRoundedInfoDialog("歡迎使用自動記帳 V20", "這版新增 / 優化：\n\n1. 修好圖片小工具載入圖片失敗問題。\n2. 圖片改成從手機相簿選取，並可預覽裁切 4:3 區塊。\n3. 小工具版面固定，按鈕不會因手機寬度不同而歪掉。\n4. 新增收入時可選擇加回本月可用預算。\n5. 防重複、CSV、備份、還原、清除資料都保留。", "我知道了", v -> AppSettings.setBool(this, AppSettings.KEY_ONBOARDED, true), "通知用途", v -> showNotificationPurpose());
     }
-
 
     private void showNotificationPurpose() {
         showRoundedInfoDialog("通知讀取用途說明", "自動記帳需要通知讀取權限，是為了在你授權後讀取 LINE Pay、載具發票、Google 錢包、銀行刷卡與交易簡訊通知，從通知文字抓出金額、收入或支出。\n\n資料預設只存在你的手機本機。\n\nApp 會自動排除自己發出的通知，也會用金額、時間與原始通知內容判斷同一筆消費，避免重複記帳。", "了解", null, null, null);

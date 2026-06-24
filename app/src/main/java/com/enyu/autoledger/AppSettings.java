@@ -34,7 +34,9 @@ public class AppSettings {
     public static final String KEY_DAILY_NOTIFY_TIME = "daily_notify_time";
     public static final String KEY_CARRIER_BARCODE = "carrier_barcode";
     public static final String KEY_WIDGET_IMAGE_URI = "widget_image_uri";
+    public static final String KEY_WIDGET_IMAGE_FILE = "widget_image_file";
     public static final String KEY_WIDGET_IMAGE_HEIGHT = "widget_image_height";
+    public static final String KEY_MONTHLY_EXTRA_PREFIX = "monthly_extra_";
     public static final String KEY_DEBT_RECORDS = "debt_records_v1";
 
     public static final String KEY_EXPENSE_CATEGORIES = "expense_categories";
@@ -76,6 +78,26 @@ public class AppSettings {
 
     public static void setMonthlyBudget(Context c, int amount) {
         sp(c).edit().putInt(KEY_MONTHLY_BUDGET, Math.max(0, amount)).apply();
+    }
+
+
+    public static String currentMonthKey() {
+        java.text.SimpleDateFormat f = new java.text.SimpleDateFormat("yyyyMM", java.util.Locale.TAIWAN);
+        return f.format(new java.util.Date());
+    }
+
+    public static int getMonthlyExtra(Context c) {
+        return sp(c).getInt(KEY_MONTHLY_EXTRA_PREFIX + currentMonthKey(), 0);
+    }
+
+    public static void addMonthlyExtra(Context c, int amount) {
+        if (amount <= 0) return;
+        String key = KEY_MONTHLY_EXTRA_PREFIX + currentMonthKey();
+        sp(c).edit().putInt(key, Math.max(0, sp(c).getInt(key, 0) + amount)).apply();
+    }
+
+    public static int getMonthlyUsableBudget(Context c) {
+        return getMonthlyBudget(c) + getMonthlyExtra(c);
     }
 
     public static String getString(Context c, String key, String def) {

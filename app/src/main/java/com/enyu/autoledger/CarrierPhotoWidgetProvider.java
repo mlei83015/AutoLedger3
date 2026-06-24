@@ -7,9 +7,8 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
-import android.net.Uri;
+import android.graphics.BitmapFactory;
 import android.os.Build;
-import android.util.TypedValue;
 import android.view.View;
 import android.widget.RemoteViews;
 
@@ -38,19 +37,27 @@ public class CarrierPhotoWidgetProvider extends AppWidgetProvider {
         Bitmap bm = BarcodeUtil.code39(carrier.isEmpty() ? "/ABC123" : carrier, 900, 190);
         views.setImageViewBitmap(R.id.widget_carrier_barcode, bm);
 
-        String img = AppSettings.getString(context, AppSettings.KEY_WIDGET_IMAGE_URI, "");
-        if (img == null || img.trim().isEmpty()) {
-            views.setViewVisibility(R.id.widget_photo, View.VISIBLE);
-        } else {
-            try { views.setImageViewUri(R.id.widget_photo, Uri.parse(img)); } catch (Exception ignored) { }
+        String path = AppSettings.getString(context, AppSettings.KEY_WIDGET_IMAGE_FILE, "");
+        Bitmap photo = null;
+        if (path != null && !path.trim().isEmpty()) {
+            try { photo = BitmapFactory.decodeFile(path); } catch (Exception ignored) { }
         }
-        if (Build.VERSION.SDK_INT >= 31) {
-            try { views.setViewLayoutHeight(R.id.widget_photo_wrap, AppSettings.getWidgetImageHeight(context), TypedValue.COMPLEX_UNIT_DIP); } catch (Exception ignored) { }
+        if (photo != null) {
+            views.setImageViewBitmap(R.id.widget_photo, photo);
+            views.setViewVisibility(R.id.widget_photo_hint, View.GONE);
+        } else {
+            views.setImageViewResource(R.id.widget_photo, R.drawable.widget_photo_placeholder);
+            views.setViewVisibility(R.id.widget_photo_hint, View.VISIBLE);
         }
 
         Intent openIntent = new Intent(context, MainActivity.class);
         openIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         views.setOnClickPendingIntent(R.id.widget_root, pending(context, 7000 + widgetId, openIntent));
+
+        Intent editPhotoIntent = new Intent(context, MainActivity.class);
+        editPhotoIntent.setAction(MainActivity.ACTION_EDIT_WIDGET_PHOTO);
+        editPhotoIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        views.setOnClickPendingIntent(R.id.widget_photo_wrap, pending(context, 7050 + widgetId, editPhotoIntent));
 
         Intent copyIntent = new Intent(context, CopyCarrierReceiver.class);
         copyIntent.setAction(CopyCarrierReceiver.ACTION_COPY_CARRIER);

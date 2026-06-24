@@ -357,7 +357,7 @@ public class TransactionStore {
     }
 
     public static int suggestedSaving(Context context) {
-        int budget = AppSettings.getMonthlyBudget(context);
+        int budget = AppSettings.getMonthlyUsableBudget(context);
         int forecast = forecastMonthExpense(context);
         int possible = budget - forecast;
         if (possible <= 0) return 0;

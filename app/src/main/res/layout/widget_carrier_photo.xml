@@ -4,29 +4,38 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:padding="12dp"
+    android:padding="10dp"
     android:background="@drawable/widget_bg">
 
     <FrameLayout
         android:id="@+id/widget_photo_wrap"
         android:layout_width="match_parent"
-        android:layout_height="76dp"
+        android:layout_height="92dp"
         android:background="@drawable/widget_photo_bg"
-        android:padding="4dp">
+        android:padding="3dp">
         <ImageView
             android:id="@+id/widget_photo"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:scaleType="centerCrop"
             android:background="@drawable/widget_photo_placeholder" />
+        <TextView
+            android:id="@+id/widget_photo_hint"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:text="點此設定圖片"
+            android:textColor="#4E6C7A"
+            android:textSize="13sp"
+            android:textStyle="bold" />
     </FrameLayout>
 
     <ImageView
         android:id="@+id/widget_carrier_barcode"
         android:layout_width="match_parent"
-        android:layout_height="62dp"
-        android:layout_marginTop="7dp"
-        android:padding="5dp"
+        android:layout_height="54dp"
+        android:layout_marginTop="6dp"
+        android:padding="4dp"
         android:background="@drawable/widget_barcode_bg"
         android:scaleType="fitXY" />
 
@@ -35,7 +44,7 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:layout_marginTop="8dp">
+        android:layout_marginTop="6dp">
         <TextView
             android:id="@+id/widget_balance"
             android:layout_width="0dp"
@@ -43,46 +52,53 @@
             android:layout_weight="1"
             android:text="$0"
             android:textColor="#063B52"
-            android:textSize="21sp"
-            android:textStyle="bold" />
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:maxLines="1"
+            android:singleLine="true" />
         <TextView
             android:id="@+id/widget_today"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="今日 $0"
             android:textColor="#557687"
-            android:textSize="11sp" />
+            android:textSize="11sp"
+            android:maxLines="1"
+            android:singleLine="true" />
     </LinearLayout>
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
+        android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:gravity="bottom"
-        android:layout_marginTop="8dp">
+        android:gravity="center"
+        android:layout_marginTop="7dp">
         <TextView
             android:id="@+id/widget_expense"
             android:layout_width="0dp"
-            android:layout_height="40dp"
+            android:layout_height="36dp"
             android:layout_weight="1"
             android:gravity="center"
             android:text="＋支出"
             android:textColor="#FFFFFF"
             android:textStyle="bold"
-            android:textSize="14sp"
+            android:textSize="13sp"
+            android:maxLines="1"
+            android:singleLine="true"
             android:background="@drawable/widget_button_expense" />
         <TextView
             android:id="@+id/widget_income"
             android:layout_width="0dp"
-            android:layout_height="40dp"
+            android:layout_height="36dp"
             android:layout_weight="1"
-            android:layout_marginStart="10dp"
+            android:layout_marginStart="8dp"
             android:gravity="center"
             android:text="＋收入"
             android:textColor="#FFFFFF"
             android:textStyle="bold"
-            android:textSize="14sp"
+            android:textSize="13sp"
+            android:maxLines="1"
+            android:singleLine="true"
             android:background="@drawable/widget_button_income" />
     </LinearLayout>
 </LinearLayout>
