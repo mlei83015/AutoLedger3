@@ -1020,7 +1020,7 @@ public class MainActivity extends Activity {
                 .setNegativeButton("取消", null)
                 .setPositiveButton("儲存", (d, w) -> {
                     String raw = time.getText().toString().trim();
-                    if (!raw.matches("^([01]?\d|2[0-3]):[0-5]\d$")) {
+                    if (!raw.matches("^([01]?\\d|2[0-3]):[0-5]\\d$")) {
                         Toast.makeText(this, "時間格式請輸入 09:00 這種格式", Toast.LENGTH_LONG).show();
                         return;
                     }
