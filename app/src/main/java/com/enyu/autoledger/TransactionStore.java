@@ -68,7 +68,7 @@ public class TransactionStore {
         }
 
         if (AppSettings.getBool(context, AppSettings.KEY_CROSS_SOURCE_DEDUPE, true) && "expense".equals(tx.direction)) {
-            long crossWindow = 48L * 60L * 60L * 1000L;
+            long crossWindow = 7L * 24L * 60L * 60L * 1000L;
             checked = 0;
             for (Transaction old : list) {
                 if (checked++ > 120) break;
@@ -82,7 +82,7 @@ public class TransactionStore {
                 boolean invoicePair = (isInvoice(old) && isPayment(tx)) || (isInvoice(tx) && isPayment(old));
                 boolean similarMerchant = merchantSimilar(old.merchant, tx.merchant) || merchantSimilar(old.raw, tx.raw);
                 boolean veryClose = diff <= 10L * 60L * 1000L;
-                if (invoicePair && (sameDay(old.timeMillis, tx.timeMillis) || veryClose || similarMerchant)) {
+                if (invoicePair && (sameDay(old.timeMillis, tx.timeMillis) || veryClose || similarMerchant || diff <= crossWindow)) {
                     return true;
                 }
                 if (similarMerchant && diff <= 6L * 60L * 60L * 1000L) {
@@ -203,6 +203,12 @@ public class TransactionStore {
         int sum = 0;
         for (Transaction t : getAll(context)) if ("expense".equals(t.direction)) sum += t.amount;
         return sum;
+    }
+
+    public static int totalBalance(Context context) {
+        // V5：首頁上方顯示的是「全部餘額」，收入會加上去、支出會扣掉。
+        // 本月預算只用來當作可花額度與圓形圖基準，不會因收入而變大。
+        return AppSettings.getMonthlyBudget(context) + totalIncome(context) - totalExpense(context);
     }
 
     public static int monthExpense(Context context) {

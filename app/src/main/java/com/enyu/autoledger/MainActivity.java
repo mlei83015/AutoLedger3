@@ -144,8 +144,8 @@ public class MainActivity extends Activity {
         int budget = AppSettings.getMonthlyBudget(this);
         int spent = TransactionStore.monthExpense(this);
         int remain = Math.max(0, budget - spent);
-        texts.addView(text("這個月可以花多少", 16, TEXT, true));
-        texts.addView(text("目前預算 " + TransactionStore.money(budget) + "，剩下 " + TransactionStore.money(remain), 13, MUTED, false));
+        texts.addView(text("本月可花預算", 16, TEXT, true));
+        texts.addView(text("圓形圖只看支出：預算 " + TransactionStore.money(budget) + "，還能花 " + TransactionStore.money(remain), 13, MUTED, false));
         row.addView(texts, new LinearLayout.LayoutParams(0, -2, 1));
         Button edit = smallChip("修改", CHIP, ORANGE);
         edit.setOnClickListener(v -> showBudgetDialog());
@@ -162,7 +162,7 @@ public class MainActivity extends Activity {
         input.setPadding(dp(16), dp(8), dp(16), dp(8));
         new AlertDialog.Builder(this)
                 .setTitle("設定本月可花預算")
-                .setMessage("這會影響首頁剩餘餘額和圓形圖百分比。")
+                .setMessage("這只會影響圓形圖的本月可花額度；收入會加到最上面的全部餘額，不會把圓形圖預算變大。")
                 .setView(input)
                 .setPositiveButton("儲存", (dialog, which) -> {
                     int amount = 0;
@@ -211,14 +211,14 @@ public class MainActivity extends Activity {
         }
 
         int budgetForMonth = AppSettings.getMonthlyBudget(this);
-        int balance = Math.max(0, budgetForMonth - TransactionStore.monthExpense(this));
+        int balance = TransactionStore.totalBalance(this);
         LinearLayout balanceCard = new LinearLayout(this);
         balanceCard.setOrientation(LinearLayout.VERTICAL);
         balanceCard.setPadding(dp(18), dp(12), dp(18), dp(12));
         balanceCard.setBackground(roundGradient(ORANGE, 0xFFFF9A2E, dp(16)));
         TextView b1 = text("剩餘餘額  ◉", 14, 0xFFFFFFFF, true);
         TextView b2 = text(TransactionStore.money(balance), 32, 0xFFFFFFFF, true);
-        TextView b3 = text("本月預算 " + TransactionStore.money(budgetForMonth) + "，點此修改", 12, 0xFFFFF6EC, false);
+        TextView b3 = text("全部餘額＝預算＋收入－支出｜本月預算 " + TransactionStore.money(budgetForMonth) + "，點此修改", 12, 0xFFFFF6EC, false);
         balanceCard.addView(b1);
         balanceCard.addView(b2);
         balanceCard.addView(b3);
@@ -235,7 +235,8 @@ public class MainActivity extends Activity {
         int budget = Math.max(1, AppSettings.getMonthlyBudget(this));
         int remaining = Math.max(0, budget - monthExpense);
         DonutChartView donut = new DonutChartView(this);
-        donut.setData(monthExpense, remaining, monthIncome, AppSettings.getPalette(this));
+        donut.setDarkMode(AppSettings.getBool(this, AppSettings.KEY_DARK_MODE, false));
+        donut.setData(monthExpense, remaining, 0, AppSettings.getPalette(this));
         chartCard.addView(donut, new LinearLayout.LayoutParams(dp(150), dp(150)));
         LinearLayout legend = new LinearLayout(this);
         legend.setOrientation(LinearLayout.VERTICAL);
@@ -244,7 +245,7 @@ public class MainActivity extends Activity {
         legend.addView(legendRow("● 本月預算", budget, 0xFFFFA726));
         legend.addView(legendRow("● 剩餘預算", remaining, 0xFF24A99B));
         legend.addView(legendRow("● 已花費", monthExpense, CORAL));
-        if (monthIncome > 0) legend.addView(legendRow("● 本月收入", monthIncome, GREEN));
+        if (monthIncome > 0) legend.addView(legendRow("● 收入會加到上方餘額", monthIncome, GREEN));
         chartCard.addView(legend, new LinearLayout.LayoutParams(0, -2, 1));
         box.addView(chartCard, marginLp(-1, -2, 0, 0, 0, dp(10)));
 
@@ -433,39 +434,75 @@ public class MainActivity extends Activity {
     }
 
     private void addPresetChips(LinearLayout box, boolean income, EditText amount, EditText category, EditText merchant, EditText note) {
-        LinearLayout row = wrapRow();
+        List<Button> chips = new java.util.ArrayList<>();
         String[][] presets = income
                 ? new String[][]{{"零用錢", "1000", "收入"}, {"薪水", "0", "收入"}, {"紅包", "0", "收入"}, {"退款", "0", "退款"}}
-                : new String[][]{{"午餐", "120", "餐飲"}, {"飲料", "65", "餐飲"}, {"交通", "40", "交通"}, {"停車", "60", "交通"}, {"全聯", "0", "購物"}};
+                : new String[][]{{"午餐", "120", "餐飲"}, {"飲料", "65", "餐飲"}, {"交通", "40", "交通"}, {"停車", "60", "交通"}, {"全聯", "0", "購物"}, {"早餐", "60", "餐飲"}};
         for (String[] p : presets) {
-            Button chip = smallChip(p[0] + (p[1].equals("0") ? "" : "\n$" + p[1]), 0xFFFFFFFF, ORANGE);
+            Button chip = presetCard(p[0] + (p[1].equals("0") ? "" : "\n$" + p[1]), 0xFFFFFFFF, ORANGE);
             chip.setOnClickListener(v -> {
                 if (amount.getText().toString().trim().isEmpty() && !p[1].equals("0")) amount.setText(p[1]);
                 merchant.setText(p[0]);
                 category.setText(p[2]);
                 if (note.getText().toString().trim().isEmpty()) note.setText(p[0]);
             });
-            row.addView(chip, chipLp());
+            chips.add(chip);
         }
-        box.addView(row);
+        addChipGrid(box, chips, 3);
     }
 
     private void addRecentChips(LinearLayout box, boolean income, EditText category, EditText merchant) {
-        LinearLayout row = wrapRow();
+        List<Button> chips = new java.util.ArrayList<>();
         List<String> recents = TransactionStore.recentChips(this, income ? "income" : "expense", 8);
         if (recents.isEmpty()) {
-            String[] defaults = income ? new String[]{"零用錢", "薪水"} : new String[]{"餐飲", "交通", "購物", "娛樂"};
+            String[] defaults = income ? new String[]{"零用錢", "薪水", "打工", "退款"} : new String[]{"餐飲", "交通", "購物", "娛樂"};
             for (String s : defaults) recents.add(s);
         }
         for (String r : recents) {
-            Button chip = smallChip(r, CHIP, TEXT);
+            Button chip = presetCard(r, CHIP, TEXT);
             chip.setOnClickListener(v -> {
                 merchant.setText(r);
                 category.setText(income ? "收入" : guessCategory(r));
             });
-            row.addView(chip, chipLp());
+            chips.add(chip);
         }
-        box.addView(row);
+        addChipGrid(box, chips, 4);
+    }
+
+    private void addChipGrid(LinearLayout box, List<Button> chips, int perRow) {
+        LinearLayout grid = new LinearLayout(this);
+        grid.setOrientation(LinearLayout.VERTICAL);
+        for (int i = 0; i < chips.size(); i += perRow) {
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER);
+            for (int j = 0; j < perRow; j++) {
+                if (i + j < chips.size()) {
+                    row.addView(chips.get(i + j), evenChipLp());
+                } else {
+                    TextView blank = new TextView(this);
+                    row.addView(blank, evenChipLp());
+                }
+            }
+            grid.addView(row, new LinearLayout.LayoutParams(-1, dp(58)));
+        }
+        box.addView(grid);
+    }
+
+    private LinearLayout.LayoutParams evenChipLp() {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(50), 1);
+        lp.setMargins(dp(4), dp(4), dp(4), dp(4));
+        return lp;
+    }
+
+    private Button presetCard(String text, int bg, int fg) {
+        Button b = smallChip(text, bg, fg);
+        b.setTextSize(13);
+        b.setGravity(Gravity.CENTER);
+        b.setSingleLine(false);
+        b.setMinHeight(dp(50));
+        b.setPadding(dp(2), 0, dp(2), 0);
+        return b;
     }
 
     private String guessCategory(String s) {

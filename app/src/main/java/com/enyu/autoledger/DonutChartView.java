@@ -16,11 +16,17 @@ public class DonutChartView extends View {
     private int colorSpent = 0xFFFF5A45;
     private int colorRemain = 0xFFFFA726;
     private int colorIncome = 0xFF16A085;
+    private boolean darkMode = false;
 
     public DonutChartView(Context context) {
         super(context);
         textPaint.setColor(0xFF20242B);
         textPaint.setTextAlign(Paint.Align.CENTER);
+    }
+
+    public void setDarkMode(boolean darkMode) {
+        this.darkMode = darkMode;
+        invalidate();
     }
 
     public void setData(int spent, int remaining, int income, int palette) {
@@ -58,7 +64,7 @@ public class DonutChartView extends View {
         paint.setStyle(Paint.Style.STROKE);
         paint.setStrokeCap(Paint.Cap.ROUND);
         paint.setStrokeWidth(dp(22));
-        paint.setColor(0xFFEFEFF3);
+        paint.setColor(darkMode ? 0xFF2A3442 : 0xFFEFEFF3);
         canvas.drawArc(r, -90, 360, false, paint);
 
         int total = Math.max(1, spent + remaining);
@@ -76,12 +82,13 @@ public class DonutChartView extends View {
         int percent = (int) Math.ceil(spent * 100f / total);
         if (spent == 0) percent = 0;
         if (spent > 0 && percent < 1) percent = 1;
+        textPaint.setColor(darkMode ? 0xFFF5F7FA : 0xFF20242B);
         canvas.drawText(percent + "%", w / 2f, h / 2f - dp(4), textPaint);
         textPaint.setTypeface(android.graphics.Typeface.DEFAULT);
         textPaint.setTextSize(dp(13));
-        textPaint.setColor(0xFF5F6672);
+        textPaint.setColor(darkMode ? 0xFFAAB3C2 : 0xFF5F6672);
         canvas.drawText("已使用", w / 2f, h / 2f + dp(18), textPaint);
-        textPaint.setColor(0xFF20242B);
+        textPaint.setColor(darkMode ? 0xFFF5F7FA : 0xFF20242B);
     }
 
     public int spentColor() { return colorSpent; }
