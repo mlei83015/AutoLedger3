@@ -92,11 +92,11 @@ public class AppSettings {
     }
 
     public static List<String> getQuickExpense(Context c) {
-        return getList(c, KEY_QUICK_EXPENSE, "午餐|120|餐飲\n飲料|65|餐飲\n交通|40|交通\n停車|60|交通\n全聯|0|購物\n早餐|60|餐飲");
+        return getList(c, KEY_QUICK_EXPENSE, "餐飲\n交通\n飲料\n停車\n全聯\n早餐");
     }
 
     public static List<String> getQuickIncome(Context c) {
-        return getList(c, KEY_QUICK_INCOME, "零用錢|1000|收入\n薪水|0|薪水\n打工|0|打工\n紅包|0|紅包\n退款|0|退款");
+        return getList(c, KEY_QUICK_INCOME, "零用錢\n薪水\n打工\n紅包\n退款\n獎金");
     }
 
     public static void setList(Context c, String key, List<String> items) {
