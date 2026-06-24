@@ -310,11 +310,15 @@ public class MainActivity extends Activity {
         LinearLayout legend = new LinearLayout(this);
         legend.setOrientation(LinearLayout.VERTICAL);
         legend.setPadding(dp(8), 0, 0, 0);
+
+        TextView remainingTitle = text("剩餘預算", 13, 0xFF24A99B, true);
+        TextView remainingValue = text(TransactionStore.money(remaining), 25, 0xFF24A99B, true);
+        legend.addView(remainingTitle);
+        legend.addView(remainingValue, marginLp(-1, -2, 0, dp(1), 0, dp(8)));
+
         legend.addView(text("本月財務狀況", 15, TEXT, true));
         legend.addView(legendRow("● 本月預算", budget, 0xFFFFA726));
-        legend.addView(legendRow("● 剩餘預算", remaining, 0xFF24A99B));
         legend.addView(legendRow("● 已花費", monthExpense, CORAL));
-        if (monthIncome > 0) legend.addView(legendRow("● 收入會加到上方餘額", monthIncome, GREEN));
         chartCard.addView(legend, new LinearLayout.LayoutParams(0, -2, 1));
         box.addView(chartCard, marginLp(-1, -2, 0, 0, 0, dp(10)));
 
