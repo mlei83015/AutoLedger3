@@ -33,6 +33,7 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Locale;
 
 public class MainActivity extends Activity {
@@ -194,6 +195,8 @@ public class MainActivity extends Activity {
         LinearLayout titleRow = new LinearLayout(this);
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
         TextView menu = text("☰", 25, TEXT, true);
+        menu.setGravity(Gravity.CENTER);
+        menu.setOnClickListener(v -> showSideMenu());
         titleRow.addView(menu, new LinearLayout.LayoutParams(dp(36), -2));
         TextView title = text("自動記帳", 22, TEXT, true);
         title.setGravity(Gravity.CENTER);
@@ -540,52 +543,204 @@ public class MainActivity extends Activity {
         applyModeColors();
         ScrollView scroll = pageBase();
         LinearLayout box = pageBox(scroll);
-        box.addView(centerTitle("統計與預估"));
-        int today = TransactionStore.expenseBetween(this, TransactionStore.startOfDay(0), TransactionStore.startOfDay(1));
-        int yesterday = TransactionStore.expenseBetween(this, TransactionStore.startOfDay(-1), TransactionStore.startOfDay(0));
-        int month = TransactionStore.monthExpense(this);
-        int income = TransactionStore.monthIncome(this);
-        int budget = AppSettings.getMonthlyBudget(this);
-        int forecast = TransactionStore.forecastMonthExpense(this);
-        int saving = TransactionStore.suggestedSaving(this);
 
-        LinearLayout c = card();
-        c.addView(text("今天支出：" + TransactionStore.money(today), 22, CORAL, true));
-        c.addView(text("昨天支出：" + TransactionStore.money(yesterday), 18, TEXT, true));
-        c.addView(text("本月支出：" + TransactionStore.money(month), 18, TEXT, true));
-        c.addView(text("本月收入：" + TransactionStore.money(income), 16, GREEN, true));
-        c.addView(text("本月預算：" + TransactionStore.money(budget), 16, MUTED, false));
-        box.addView(c, marginLp(-1, -2, 0, dp(16), 0, dp(12)));
+        LinearLayout top = new LinearLayout(this);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        TextView back = text("‹", 32, TEXT, false);
+        back.setGravity(Gravity.CENTER);
+        back.setOnClickListener(v -> showHome());
+        top.addView(back, new LinearLayout.LayoutParams(dp(38), -2));
+        TextView title = text("財務報表", 22, TEXT, true);
+        title.setGravity(Gravity.CENTER);
+        top.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
+        TextView chartIcon = text("▥", 25, TEXT, true);
+        chartIcon.setGravity(Gravity.RIGHT);
+        top.addView(chartIcon, new LinearLayout.LayoutParams(dp(44), -2));
+        box.addView(top, marginLp(-1, -2, 0, 0, 0, dp(12)));
 
-        LinearLayout forecastCard = card();
-        forecastCard.setBackground(round(AppSettings.getBool(this, AppSettings.KEY_DARK_MODE, false) ? 0xFF1B2633 : 0xFFFFF7EE, dp(16), BORDER));
-        forecastCard.addView(text("月底預估花費", 18, TEXT, true));
-        forecastCard.addView(text("依照目前本月每天平均支出，預估月底約花：" + TransactionStore.money(forecast), 15, TEXT, true));
-        String msg;
-        if (forecast > budget) {
-            msg = "照現在速度，月底可能超過預算 " + TransactionStore.money(forecast - budget) + "，建議先檢查飲料、外食、訂閱。";
-        } else if (saving > 0) {
-            msg = "照現在速度，月底可能還有剩。可以考慮先把約 " + TransactionStore.money(saving) + " 放到儲蓄或定期定額提醒。";
+        LinearLayout typeTabs = new LinearLayout(this);
+        typeTabs.setOrientation(LinearLayout.HORIZONTAL);
+        typeTabs.setBackground(round(AppSettings.getBool(this, AppSettings.KEY_DARK_MODE, false) ? 0xFF202933 : 0xFFF2F3F5, dp(18), BORDER));
+        Button expenseTab = reportTab("支出", true);
+        Button incomeTab = reportTab("收入", false);
+        Button balanceTab = reportTab("結餘", false);
+        typeTabs.addView(expenseTab, new LinearLayout.LayoutParams(0, dp(52), 1));
+        typeTabs.addView(incomeTab, new LinearLayout.LayoutParams(0, dp(52), 1));
+        typeTabs.addView(balanceTab, new LinearLayout.LayoutParams(0, dp(52), 1));
+        box.addView(typeTabs, marginLp(-1, -2, 0, 0, 0, dp(12)));
+        incomeTab.setOnClickListener(v -> showStatsMessage("收入", TransactionStore.monthIncome(this)));
+        balanceTab.setOnClickListener(v -> showStatsMessage("結餘", TransactionStore.totalBalance(this)));
+
+        LinearLayout rangeTabs = new LinearLayout(this);
+        rangeTabs.setOrientation(LinearLayout.HORIZONTAL);
+        String[] ranges = {"月", "近六個月", "年", "自訂"};
+        for (int i = 0; i < ranges.length; i++) rangeTabs.addView(rangeChip(ranges[i], i == 0), new LinearLayout.LayoutParams(0, dp(46), 1));
+        box.addView(rangeTabs, marginLp(-1, -2, 0, 0, 0, dp(12)));
+
+        LinearLayout monthRow = new LinearLayout(this);
+        monthRow.setGravity(Gravity.CENTER_VERTICAL);
+        TextView month = text("◀  " + new SimpleDateFormat("yyyy年M月", Locale.TAIWAN).format(new Date()) + "  ▶", 17, TEXT, true);
+        monthRow.addView(month, new LinearLayout.LayoutParams(0, -2, 1));
+        TextView currency = text("全幣別 (TWD) ▾", 15, TEXT, true);
+        currency.setGravity(Gravity.RIGHT);
+        monthRow.addView(currency, new LinearLayout.LayoutParams(0, -2, 1));
+        box.addView(monthRow, marginLp(-1, -2, 0, 0, 0, dp(12)));
+
+        int monthExpense = TransactionStore.monthExpense(this);
+        int monthIncome = TransactionStore.monthIncome(this);
+        int budget = Math.max(1, AppSettings.getMonthlyBudget(this));
+        int remaining = Math.max(0, budget - monthExpense);
+        LinearLayout chartCard = card();
+        chartCard.setGravity(Gravity.CENTER);
+        DonutChartView donut = new DonutChartView(this);
+        donut.setDarkMode(AppSettings.getBool(this, AppSettings.KEY_DARK_MODE, false));
+        donut.setData(monthExpense, Math.max(0, budget - monthExpense), 0, AppSettings.getPalette(this));
+        chartCard.addView(donut, new LinearLayout.LayoutParams(dp(230), dp(230)));
+        TextView centerSummary = text("總支出  " + TransactionStore.money(monthExpense), 17, TEXT, true);
+        centerSummary.setGravity(Gravity.CENTER);
+        chartCard.addView(centerSummary, marginLp(-1, -2, 0, dp(6), 0, 0));
+        TextView budgetHint = text("本月預算 " + TransactionStore.money(budget) + "｜剩餘 " + TransactionStore.money(remaining), 13, MUTED, false);
+        budgetHint.setGravity(Gravity.CENTER);
+        chartCard.addView(budgetHint, marginLp(-1, -2, 0, dp(4), 0, dp(6)));
+        box.addView(chartCard, marginLp(-1, -2, 0, 0, 0, dp(12)));
+
+        if (monthExpense == 0 && monthIncome == 0) {
+            LinearLayout empty = card();
+            empty.setGravity(Gravity.CENTER);
+            TextView icon = text("▤✎", 45, MUTED, true);
+            icon.setGravity(Gravity.CENTER);
+            empty.addView(icon, marginLp(-1, -2, 0, dp(18), 0, dp(6)));
+            TextView none = text("無記帳記錄", 18, MUTED, true);
+            none.setGravity(Gravity.CENTER);
+            empty.addView(none);
+            Button add = pill("記一筆", CHIP, TEXT);
+            add.setOnClickListener(v -> showManual("expense"));
+            empty.addView(add, marginLp(dp(160), dp(48), 0, dp(12), 0, dp(12)));
+            box.addView(empty);
         } else {
-            msg = "目前接近預算，先維持每天花費不要突然增加。";
+            LinearLayout summary = card();
+            summary.addView(text("本月摘要", 18, TEXT, true));
+            summary.addView(text("支出：" + TransactionStore.money(monthExpense) + "　收入：" + TransactionStore.money(monthIncome), 15, TEXT, false));
+            summary.addView(text("結餘：" + TransactionStore.money(monthIncome - monthExpense), 15, monthIncome >= monthExpense ? GREEN : CORAL, true));
+            summary.addView(text("月底預估花費：" + TransactionStore.money(TransactionStore.forecastMonthExpense(this)), 14, MUTED, false));
+            box.addView(summary, marginLp(-1, -2, 0, 0, 0, dp(12)));
         }
-        forecastCard.addView(text(msg, 15, MUTED, false));
-        forecastCard.addView(text("提醒：這只是預算規劃參考，不是投資建議。", 12, MUTED, false));
-        box.addView(forecastCard, marginLp(-1, -2, 0, 0, 0, dp(12)));
 
-        LinearLayout features = card();
-        features.addView(text("資料管理", 18, TEXT, true));
-        Button csv = pill("匯出 CSV", 0xFFFFF0EA, ORANGE);
+        LinearLayout tools = card();
+        tools.addView(text("報表工具", 18, TEXT, true));
+        LinearLayout toolRow = new LinearLayout(this);
+        toolRow.setOrientation(LinearLayout.HORIZONTAL);
+        Button csv = smallChip("匯出 CSV", 0xFFFFF0EA, ORANGE);
         csv.setOnClickListener(v -> shareCsv());
-        features.addView(csv, marginLp(-1, dp(48), 0, dp(8), 0, 0));
-        Button backup = pill("備份資料", CHIP, TEXT);
-        backup.setOnClickListener(v -> shareBackup());
-        features.addView(backup, marginLp(-1, dp(48), 0, dp(8), 0, 0));
-        Button restore = pill("還原資料", CHIP, TEXT);
-        restore.setOnClickListener(v -> showRestoreDialog());
-        features.addView(restore, marginLp(-1, dp(48), 0, dp(8), 0, 0));
-        box.addView(features);
+        Button scan = smallChip("掃描重複", CHIP, TEXT);
+        scan.setOnClickListener(v -> {
+            int removed = TransactionStore.autoFixDuplicates(this);
+            Toast.makeText(this, "已移除 " + removed + " 筆疑似重複資料", Toast.LENGTH_LONG).show();
+            showStats();
+        });
+        toolRow.addView(csv, new LinearLayout.LayoutParams(0, dp(50), 1));
+        toolRow.addView(scan, new LinearLayout.LayoutParams(0, dp(50), 1));
+        tools.addView(toolRow);
+        box.addView(tools);
+
         setPage(scroll);
+    }
+
+    private Button reportTab(String s, boolean selected) {
+        Button b = smallChip(s, selected ? 0xFFFFCC55 : CHIP, selected ? 0xFF1F2329 : TEXT);
+        b.setTextSize(16);
+        b.setTypeface(Typeface.DEFAULT_BOLD);
+        return b;
+    }
+
+    private Button rangeChip(String s, boolean selected) {
+        Button b = smallChip(s, selected ? 0xFFFFCC55 : (AppSettings.getBool(this, AppSettings.KEY_DARK_MODE, false) ? 0xFF1B2530 : 0xFFF7F7F8), selected ? 0xFF1F2329 : TEXT);
+        b.setTextSize(14);
+        b.setTypeface(Typeface.DEFAULT_BOLD);
+        return b;
+    }
+
+    private void showStatsMessage(String name, int amount) {
+        Toast.makeText(this, name + "：" + TransactionStore.money(amount), Toast.LENGTH_SHORT).show();
+    }
+
+    private void showSideMenu() {
+        applyModeColors();
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(20), dp(18), dp(20), dp(18));
+        panel.setBackground(round(AppSettings.getBool(this, AppSettings.KEY_DARK_MODE, false) ? 0xFF1E242D : 0xFFFFFFFF, dp(20), BORDER));
+
+        LinearLayout profile = new LinearLayout(this);
+        profile.setGravity(Gravity.CENTER_VERTICAL);
+        TextView avatar = text("●", 48, AppSettings.getBool(this, AppSettings.KEY_DARK_MODE, false) ? 0xFFFFFFFF : 0xFF222222, true);
+        avatar.setGravity(Gravity.CENTER);
+        avatar.setBackground(round(AppSettings.getBool(this, AppSettings.KEY_DARK_MODE, false) ? 0xFF2A333F : 0xFFF2F2F2, dp(42), BORDER));
+        profile.addView(avatar, new LinearLayout.LayoutParams(dp(78), dp(78)));
+        LinearLayout info = new LinearLayout(this);
+        info.setOrientation(LinearLayout.VERTICAL);
+        info.setPadding(dp(14), 0, 0, 0);
+        info.addView(text("自動記帳使用者  ☁", 18, TEXT, true));
+        Button vip = smallChip("升級 VIP", CHIP, TEXT);
+        info.addView(vip, marginLp(dp(120), dp(42), 0, dp(8), 0, 0));
+        profile.addView(info, new LinearLayout.LayoutParams(0, -2, 1));
+        panel.addView(profile, marginLp(-1, -2, 0, 0, 0, dp(14)));
+
+        LinearLayout topAction = new LinearLayout(this);
+        topAction.setOrientation(LinearLayout.HORIZONTAL);
+        Button search = smallChip("⌕", CHIP, TEXT);
+        Button streak = smallChip("🔥  連續記帳", 0xFFFF7076, 0xFFFFFFFF);
+        streak.setTextSize(16);
+        topAction.addView(search, new LinearLayout.LayoutParams(dp(76), dp(58)));
+        topAction.addView(streak, new LinearLayout.LayoutParams(0, dp(58), 1));
+        panel.addView(topAction, marginLp(-1, -2, 0, 0, 0, dp(16)));
+
+        panel.addView(sideMenuButton("◔", "帳務報表", v -> { closeDialogs(); showStats(); }));
+        panel.addView(sideMenuButton("▤", "發票記帳  HOT", v -> showFeatureComing("發票記帳", "之後會接載具發票匯入與中獎提醒。")));
+        panel.addView(sideMenuButton("▦", "記帳小工具", v -> showFeatureComing("記帳小工具", "可以放快速記帳、今日花費、預算提醒。")));
+        panel.addView(sideMenuButton("👥", "共享帳本", v -> showFeatureComing("共享帳本", "未來可做室友、情侶、社團共同帳本。")));
+        panel.addView(sideMenuButton("▦", "分類管理", v -> showSettings()));
+        panel.addView(sideMenuButton("🏷", "固定收支", v -> showFeatureComing("固定收支", "之後可新增每月房租、訂閱、薪水自動產生紀錄。")));
+        panel.addView(sideMenuButton("🌐", "財務模擬", v -> showStats()));
+        panel.addView(sideMenuButton("⚙", "功能設定", v -> showSettings()));
+        TextView encourage = text("👍  給予鼓勵", 15, 0xFF34B7E6, true);
+        encourage.setGravity(Gravity.CENTER);
+        encourage.setPadding(0, dp(14), 0, 0);
+        panel.addView(encourage);
+
+        AlertDialog dialog = new AlertDialog.Builder(this).setView(panel).create();
+        dialog.setOnShowListener(d -> {
+            if (dialog.getWindow() != null) dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
+        });
+        sideDialog = dialog;
+        dialog.show();
+    }
+
+    private AlertDialog sideDialog;
+
+    private void closeDialogs() {
+        if (sideDialog != null && sideDialog.isShowing()) sideDialog.dismiss();
+    }
+
+    private View sideMenuButton(String icon, String label, View.OnClickListener listener) {
+        Button b = smallChip(icon + "   " + label, AppSettings.getBool(this, AppSettings.KEY_DARK_MODE, false) ? 0xFF222A34 : 0xFFF7F7F8, TEXT);
+        b.setTextSize(16);
+        b.setGravity(Gravity.CENTER_VERTICAL);
+        b.setPadding(dp(18), 0, dp(18), 0);
+        b.setOnClickListener(v -> { closeDialogs(); listener.onClick(v); });
+        LinearLayout.LayoutParams lp = marginLp(-1, dp(56), 0, dp(6), 0, dp(6));
+        LinearLayout wrap = new LinearLayout(this);
+        wrap.setOrientation(LinearLayout.VERTICAL);
+        wrap.addView(b, lp);
+        return wrap;
+    }
+
+    private void showFeatureComing(String title, String body) {
+        new AlertDialog.Builder(this)
+                .setTitle(title)
+                .setMessage(body + "\n\n這個會先放進功能入口，之後可以再做成正式功能。")
+                .setPositiveButton("知道了", null)
+                .show();
     }
 
     private void showSettings() {
