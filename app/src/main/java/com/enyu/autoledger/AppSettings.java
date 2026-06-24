@@ -33,6 +33,9 @@ public class AppSettings {
     public static final String KEY_NOTIFY_DUPLICATE = "notify_duplicate";
     public static final String KEY_DAILY_NOTIFY_TIME = "daily_notify_time";
     public static final String KEY_CARRIER_BARCODE = "carrier_barcode";
+    public static final String KEY_WIDGET_IMAGE_URI = "widget_image_uri";
+    public static final String KEY_WIDGET_IMAGE_HEIGHT = "widget_image_height";
+    public static final String KEY_DEBT_RECORDS = "debt_records_v1";
 
     public static final String KEY_EXPENSE_CATEGORIES = "expense_categories";
     public static final String KEY_INCOME_CATEGORIES = "income_categories";
@@ -97,6 +100,15 @@ public class AppSettings {
 
     public static List<String> getQuickIncome(Context c) {
         return getList(c, KEY_QUICK_INCOME, "零用錢\n薪水\n打工\n紅包\n退款\n獎金");
+    }
+
+    public static int getWidgetImageHeight(Context c) {
+        return sp(c).getInt(KEY_WIDGET_IMAGE_HEIGHT, 76);
+    }
+
+    public static void setWidgetImageHeight(Context c, int dp) {
+        int safe = Math.max(48, Math.min(130, dp));
+        sp(c).edit().putInt(KEY_WIDGET_IMAGE_HEIGHT, safe).apply();
     }
 
     public static void setList(Context c, String key, List<String> items) {

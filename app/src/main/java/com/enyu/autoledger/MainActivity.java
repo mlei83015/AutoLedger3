@@ -42,6 +42,7 @@ import java.util.Locale;
 public class MainActivity extends Activity {
     public static final String ACTION_QUICK_EXPENSE = "com.enyu.autoledger.action.QUICK_EXPENSE";
     public static final String ACTION_QUICK_INCOME = "com.enyu.autoledger.action.QUICK_INCOME";
+    private static final int REQUEST_WIDGET_IMAGE = 1901;
 
     private LinearLayout root;
     private LinearLayout content;
@@ -84,6 +85,22 @@ public class MainActivity extends Activity {
         super.onNewIntent(intent);
         setIntent(intent);
         handleLaunchIntent(intent);
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQUEST_WIDGET_IMAGE && resultCode == RESULT_OK && data != null && data.getData() != null) {
+            Uri uri = data.getData();
+            try {
+                final int flags = data.getFlags() & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+                getContentResolver().takePersistableUriPermission(uri, flags & Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            } catch (Exception ignored) { }
+            AppSettings.setString(this, AppSettings.KEY_WIDGET_IMAGE_URI, uri.toString());
+            try { CarrierPhotoWidgetProvider.updateAll(this); } catch (Exception ignored) { }
+            Toast.makeText(this, "已設定桌面小工具圖片", Toast.LENGTH_SHORT).show();
+            showSettings();
+        }
     }
 
     private void handleLaunchIntent(Intent intent) {
@@ -997,6 +1014,7 @@ public class MainActivity extends Activity {
         panel.addView(topAction, marginLp(-1, -2, 0, 0, 0, dp(16)));
 
         panel.addView(sideMenuButton("◔", "帳務報表", v -> { closeDialogs(); showStats(); }));
+        panel.addView(sideMenuButton("💸", "欠款紀錄", v -> { closeDialogs(); showDebtTracker(); }));
         panel.addView(sideMenuButton("▤", "發票記帳  HOT", v -> showFeatureComing("發票記帳", "之後會接載具發票匯入與中獎提醒。")));
         panel.addView(sideMenuButton("▦", "記帳小工具", v -> showWidgetInfoDialog()));
         panel.addView(sideMenuButton("👥", "共享帳本", v -> showFeatureComing("共享帳本", "未來可做室友、情侶、社團共同帳本。")));
@@ -1076,6 +1094,7 @@ public class MainActivity extends Activity {
         clear.setOnClickListener(v -> {
             AppSettings.setString(this, AppSettings.KEY_CARRIER_BARCODE, "");
             try { CarrierBalanceWidgetProvider.updateAll(this); } catch (Exception ignored) { }
+            try { CarrierPhotoWidgetProvider.updateAll(this); } catch (Exception ignored) { }
             Toast.makeText(this, "已清除載具條碼", Toast.LENGTH_SHORT).show();
             dialog.dismiss();
             showSettings();
@@ -1089,6 +1108,7 @@ public class MainActivity extends Activity {
             }
             AppSettings.setString(this, AppSettings.KEY_CARRIER_BARCODE, code);
             try { CarrierBalanceWidgetProvider.updateAll(this); } catch (Exception ignored) { }
+            try { CarrierPhotoWidgetProvider.updateAll(this); } catch (Exception ignored) { }
             Toast.makeText(this, "已儲存載具條碼，點桌面條碼可複製", Toast.LENGTH_SHORT).show();
             dialog.dismiss();
             showSettings();
@@ -1097,8 +1117,79 @@ public class MainActivity extends Activity {
     }
 
 
+    private String widgetImageSubtitle() {
+        String uri = AppSettings.getString(this, AppSettings.KEY_WIDGET_IMAGE_URI, "");
+        int h = AppSettings.getWidgetImageHeight(this);
+        return (uri == null || uri.trim().isEmpty() ? "尚未設定圖片" : "已設定圖片") + "｜圖片區域 " + h + "dp";
+    }
+
+    private void showWidgetImageSettingsDialog() {
+        final AlertDialog dialog = new AlertDialog.Builder(this).create();
+        LinearLayout panel = dialogPanel(dp(30));
+        panel.addView(text("圖片小工具設定", 21, TEXT, true), marginLp(-1, -2, 0, 0, 0, dp(8)));
+        panel.addView(text("這是第三種桌面小工具：上方顯示自訂圖片，中間顯示載具條碼，下方顯示餘額與支出 / 收入按鈕。", 14, TEXT, false), marginLp(-1, -2, 0, 0, 0, dp(12)));
+
+        TextView state = text(widgetImageSubtitle(), 14, MUTED, false);
+        state.setPadding(dp(14), dp(10), dp(14), dp(10));
+        state.setBackground(round(CHIP, dp(18), BORDER));
+        panel.addView(state, marginLp(-1, -2, 0, 0, 0, dp(12)));
+
+        panel.addView(text("圖片區域大小", 15, TEXT, true), marginLp(-1, -2, 0, 0, 0, dp(8)));
+        LinearLayout heights = wrapRow();
+        int current = AppSettings.getWidgetImageHeight(this);
+        int[] values = new int[]{60, 76, 96, 118};
+        String[] labels = new String[]{"小", "中", "大", "很大"};
+        for (int i = 0; i < values.length; i++) {
+            final int value = values[i];
+            Button b = smallChip((current == value ? "✓ " : "") + labels[i], current == value ? 0xFFE6F8FF : CHIP, current == value ? TEAL : TEXT);
+            b.setOnClickListener(v -> {
+                AppSettings.setWidgetImageHeight(this, value);
+                try { CarrierPhotoWidgetProvider.updateAll(this); } catch (Exception ignored) { }
+                Toast.makeText(this, "已改圖片區域大小", Toast.LENGTH_SHORT).show();
+                dialog.dismiss();
+                showWidgetImageSettingsDialog();
+            });
+            heights.addView(b, chipLp());
+        }
+        panel.addView(heights, marginLp(-1, -2, 0, 0, 0, dp(14)));
+
+        LinearLayout actions = dialogActionsRow();
+        Button choose = bigAction("選擇圖片", 0xFF42C7E8, 0xFF4D8DFF);
+        Button clear = pill("清除圖片", CHIP, EXPENSE_RED);
+        actions.addView(choose, marginLp(0, dp(52), 0, 0, dp(6), 0, 1));
+        actions.addView(clear, marginLp(0, dp(52), dp(6), 0, 0, 0, 1));
+        panel.addView(actions, marginLp(-1, -2, 0, 0, 0, dp(8)));
+
+        LinearLayout bottom = dialogActionsRow();
+        Button close = pill("關閉", CHIP, TEXT);
+        Button carrier = bigSave("設定載具");
+        bottom.addView(close, marginLp(0, dp(50), 0, 0, dp(6), 0, 1));
+        bottom.addView(carrier, marginLp(0, dp(50), dp(6), 0, 0, 0, 1));
+        panel.addView(bottom);
+
+        choose.setOnClickListener(v -> {
+            Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("image/*");
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+            dialog.dismiss();
+            startActivityForResult(intent, REQUEST_WIDGET_IMAGE);
+        });
+        clear.setOnClickListener(v -> {
+            AppSettings.setString(this, AppSettings.KEY_WIDGET_IMAGE_URI, "");
+            try { CarrierPhotoWidgetProvider.updateAll(this); } catch (Exception ignored) { }
+            Toast.makeText(this, "已清除小工具圖片", Toast.LENGTH_SHORT).show();
+            dialog.dismiss();
+            showSettings();
+        });
+        close.setOnClickListener(v -> dialog.dismiss());
+        carrier.setOnClickListener(v -> { dialog.dismiss(); showCarrierBarcodeDialog(); });
+        showCustomDialog(dialog, panel);
+    }
+
+
     private void showWidgetInfoDialog() {
-        showRoundedInfoDialog("桌面小工具", "V18 有兩種桌面小工具：\n\n1. 簡易記帳小工具：顯示餘額、今日花費，點「支出／收入」快速新增。\n\n2. 載具＋記帳小工具：上方只顯示一個載具條碼，點條碼可以複製載具號碼，下方顯示餘額與快速新增。\n\nAndroid 桌面小工具不能直接放真正的打字輸入框，所以小工具上的「點我輸入金額」會打開一個很小的快速新增視窗。", "知道了", null, "設定載具", v -> showCarrierBarcodeDialog());
+        showRoundedInfoDialog("桌面小工具", "V19 有三種桌面小工具：\n\n1. 簡易記帳小工具：顯示餘額、今日花費，點「支出／收入」快速新增。\n\n2. 載具＋記帳小工具：顯示載具條碼、餘額、今日花費、輸入金額入口。\n\n3. 圖片＋載具＋記帳小工具：最上面顯示你自訂的圖片，中間顯示載具條碼，下方顯示餘額與「支出／收入」。這個版本沒有「點我輸入金額」那一格。", "知道了", null, "圖片設定", v -> showWidgetImageSettingsDialog());
     }
 
 
@@ -1166,6 +1257,251 @@ public class MainActivity extends Activity {
     }
 
 
+    private static class DebtEntry {
+        String name;
+        int amount;
+        String note;
+        long created;
+    }
+
+    private String safeDebtText(String s) {
+        if (s == null) return "";
+        return s.replace("|", " ").replace("\n", " ").trim();
+    }
+
+    private List<DebtEntry> loadDebts() {
+        List<DebtEntry> list = new ArrayList<>();
+        String raw = AppSettings.getString(this, AppSettings.KEY_DEBT_RECORDS, "");
+        if (raw == null || raw.trim().isEmpty()) return list;
+        for (String line : raw.split("\\n")) {
+            String[] p = line.split("\\|", -1);
+            if (p.length < 2) continue;
+            DebtEntry e = new DebtEntry();
+            e.name = p[0].trim().isEmpty() ? "未命名" : p[0].trim();
+            try { e.amount = Math.max(0, Integer.parseInt(p[1].trim())); } catch (Exception ex) { e.amount = 0; }
+            e.note = p.length >= 3 ? p[2].trim() : "";
+            try { e.created = p.length >= 4 ? Long.parseLong(p[3].trim()) : System.currentTimeMillis(); } catch (Exception ex) { e.created = System.currentTimeMillis(); }
+            if (e.amount > 0) list.add(e);
+        }
+        return list;
+    }
+
+    private void saveDebts(List<DebtEntry> list) {
+        StringBuilder b = new StringBuilder();
+        for (DebtEntry e : list) {
+            if (e == null || e.amount <= 0) continue;
+            if (b.length() > 0) b.append('\n');
+            b.append(safeDebtText(e.name)).append('|')
+                    .append(e.amount).append('|')
+                    .append(safeDebtText(e.note)).append('|')
+                    .append(e.created <= 0 ? System.currentTimeMillis() : e.created);
+        }
+        AppSettings.setString(this, AppSettings.KEY_DEBT_RECORDS, b.toString());
+    }
+
+    private int debtTotal(List<DebtEntry> list) {
+        int total = 0;
+        for (DebtEntry e : list) total += Math.max(0, e.amount);
+        return total;
+    }
+
+    private void showDebtTracker() {
+        applyModeColors();
+        ScrollView scroll = pageBase();
+        LinearLayout box = pageBox(scroll);
+        LinearLayout titleRow = new LinearLayout(this);
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
+        TextView back = text("‹", 34, TEXT, true);
+        back.setGravity(Gravity.CENTER);
+        back.setOnClickListener(v -> showHome());
+        titleRow.addView(back, new LinearLayout.LayoutParams(dp(52), dp(52)));
+        TextView title = text("欠款紀錄", 23, TEXT, true);
+        title.setGravity(Gravity.CENTER);
+        titleRow.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
+        SpaceFill(titleRow, dp(52));
+        box.addView(titleRow, marginLp(-1, -2, 0, dp(4), 0, dp(10)));
+
+        List<DebtEntry> debts = loadDebts();
+        LinearLayout summary = section("目前別人欠你的錢");
+        TextView total = text(TransactionStore.money(debtTotal(debts)), 34, GREEN, true);
+        total.setPadding(0, dp(4), 0, dp(6));
+        summary.addView(total);
+        summary.addView(text("可以記錄同學、朋友或家人欠你的錢；對方還一部分時，按扣還款就會自動扣掉。", 14, MUTED, false));
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        Button add = bigSave("＋ 新增欠款");
+        Button repay = pill("扣還款", CHIP, TEXT);
+        actions.addView(add, marginLp(0, dp(54), 0, dp(14), dp(6), 0, 1));
+        actions.addView(repay, marginLp(0, dp(54), dp(6), dp(14), 0, 0, 1));
+        summary.addView(actions);
+        box.addView(summary, marginLp(-1, -2, 0, 0, 0, dp(12)));
+
+        LinearLayout listSec = section("欠款清單");
+        if (debts.isEmpty()) {
+            TextView empty = text("目前沒有欠款紀錄\n按「新增欠款」開始記錄。", 15, MUTED, false);
+            empty.setGravity(Gravity.CENTER);
+            empty.setPadding(0, dp(30), 0, dp(30));
+            listSec.addView(empty);
+        } else {
+            for (int i = 0; i < debts.size(); i++) {
+                final int index = i;
+                DebtEntry e = debts.get(i);
+                listSec.addView(debtRow(e, index), marginLp(-1, -2, 0, dp(4), 0, dp(4)));
+            }
+        }
+        box.addView(listSec);
+        add.setOnClickListener(v -> showDebtEditDialog(null, -1));
+        repay.setOnClickListener(v -> showDebtRepayPicker());
+        setPage(scroll);
+    }
+
+    private void SpaceFill(LinearLayout row, int width) {
+        TextView spacer = text("", 1, TEXT, false);
+        row.addView(spacer, new LinearLayout.LayoutParams(width, 1));
+    }
+
+    private View debtRow(DebtEntry e, int index) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(14), dp(12), dp(14), dp(12));
+        row.setBackground(round(CHIP, dp(22), BORDER));
+        TextView icon = text("💸", 25, TEXT, true);
+        icon.setGravity(Gravity.CENTER);
+        icon.setBackground(round(isDarkMode() ? 0xFF22303B : 0xFFF2FCFF, dp(18), BORDER));
+        row.addView(icon, new LinearLayout.LayoutParams(dp(54), dp(54)));
+        LinearLayout mid = new LinearLayout(this);
+        mid.setOrientation(LinearLayout.VERTICAL);
+        mid.setPadding(dp(12), 0, 0, 0);
+        mid.addView(text(e.name, 18, TEXT, true));
+        String sub = e.note == null || e.note.isEmpty() ? "點一下可修改，長按快速扣還款" : e.note;
+        mid.addView(text(sub, 13, MUTED, false));
+        row.addView(mid, new LinearLayout.LayoutParams(0, -2, 1));
+        TextView amount = text(TransactionStore.money(e.amount), 20, EXPENSE_RED, true);
+        amount.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        row.addView(amount, new LinearLayout.LayoutParams(dp(120), -2));
+        row.setOnClickListener(v -> showDebtEditDialog(e, index));
+        row.setOnLongClickListener(v -> { showDebtRepayDialog(e, index); return true; });
+        return row;
+    }
+
+    private void showDebtEditDialog(DebtEntry existing, int index) {
+        final AlertDialog dialog = new AlertDialog.Builder(this).create();
+        LinearLayout panel = dialogPanel(dp(30));
+        panel.addView(text(index >= 0 ? "修改欠款" : "新增欠款", 22, TEXT, true), marginLp(-1, -2, 0, 0, 0, dp(12)));
+        final EditText name = edit("誰欠你錢，例如：阿明", false);
+        final EditText amount = edit("欠多少，例如：1000", true);
+        final EditText note = edit("備註，例如：午餐先墊", false);
+        amount.setInputType(InputType.TYPE_CLASS_NUMBER);
+        if (existing != null) {
+            name.setText(existing.name);
+            amount.setText(String.valueOf(existing.amount));
+            note.setText(existing.note);
+        }
+        panel.addView(text("名字", 14, TEXT, true));
+        panel.addView(name, marginLp(-1, dp(54), 0, dp(6), 0, dp(12)));
+        panel.addView(text("金額", 14, TEXT, true));
+        panel.addView(amount, marginLp(-1, dp(54), 0, dp(6), 0, dp(12)));
+        panel.addView(text("備註", 14, TEXT, true));
+        panel.addView(note, marginLp(-1, dp(54), 0, dp(6), 0, dp(16)));
+        LinearLayout actions = dialogActionsRow();
+        Button cancel = pill("取消", CHIP, TEXT);
+        Button repay = pill("扣還款", CHIP, GREEN);
+        Button save = bigSave("儲存");
+        actions.addView(cancel, marginLp(0, dp(50), 0, 0, dp(6), 0, 1));
+        if (index >= 0) actions.addView(repay, marginLp(0, dp(50), dp(6), 0, dp(6), 0, 1));
+        actions.addView(save, marginLp(0, dp(50), dp(6), 0, 0, 0, 1));
+        panel.addView(actions);
+        cancel.setOnClickListener(v -> dialog.dismiss());
+        repay.setOnClickListener(v -> { dialog.dismiss(); showDebtRepayDialog(existing, index); });
+        save.setOnClickListener(v -> {
+            int amt = 0;
+            try { amt = Integer.parseInt(amount.getText().toString().replace(",", "").trim()); } catch (Exception ignored) { }
+            if (name.getText().toString().trim().isEmpty() || amt <= 0) {
+                Toast.makeText(this, "名字和金額都要填", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            List<DebtEntry> list = loadDebts();
+            DebtEntry e = existing == null ? new DebtEntry() : existing;
+            e.name = safeDebtText(name.getText().toString());
+            e.amount = amt;
+            e.note = safeDebtText(note.getText().toString());
+            if (e.created <= 0) e.created = System.currentTimeMillis();
+            if (index >= 0 && index < list.size()) list.set(index, e); else list.add(e);
+            saveDebts(list);
+            Toast.makeText(this, "已儲存欠款紀錄", Toast.LENGTH_SHORT).show();
+            dialog.dismiss();
+            showDebtTracker();
+        });
+        showCustomDialog(dialog, panel);
+    }
+
+    private void showDebtRepayPicker() {
+        List<DebtEntry> list = loadDebts();
+        if (list.isEmpty()) {
+            Toast.makeText(this, "目前沒有欠款紀錄", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        final AlertDialog dialog = new AlertDialog.Builder(this).create();
+        LinearLayout panel = dialogPanel(dp(30));
+        panel.addView(text("選擇要扣還款的人", 21, TEXT, true), marginLp(-1, -2, 0, 0, 0, dp(12)));
+        for (int i = 0; i < list.size(); i++) {
+            final int index = i;
+            DebtEntry e = list.get(i);
+            Button b = pill(e.name + "  " + TransactionStore.money(e.amount), CHIP, TEXT);
+            b.setGravity(Gravity.CENTER_VERTICAL);
+            b.setPadding(dp(16), 0, dp(16), 0);
+            b.setOnClickListener(v -> { dialog.dismiss(); showDebtRepayDialog(e, index); });
+            panel.addView(b, marginLp(-1, dp(50), 0, dp(4), 0, dp(6)));
+        }
+        Button close = pill("關閉", CHIP, TEXT);
+        close.setOnClickListener(v -> dialog.dismiss());
+        panel.addView(close, marginLp(-1, dp(50), 0, dp(10), 0, 0));
+        showCustomDialog(dialog, panel);
+    }
+
+    private void showDebtRepayDialog(DebtEntry entry, int index) {
+        if (entry == null || index < 0) return;
+        final AlertDialog dialog = new AlertDialog.Builder(this).create();
+        LinearLayout panel = dialogPanel(dp(30));
+        panel.addView(text("扣還款", 22, TEXT, true), marginLp(-1, -2, 0, 0, 0, dp(8)));
+        panel.addView(text(entry.name + " 目前還欠你 " + TransactionStore.money(entry.amount), 15, MUTED, false), marginLp(-1, -2, 0, 0, 0, dp(14)));
+        final EditText repay = edit("這次還多少，例如：100", true);
+        repay.setInputType(InputType.TYPE_CLASS_NUMBER);
+        panel.addView(repay, marginLp(-1, dp(56), 0, 0, 0, dp(16)));
+        LinearLayout actions = dialogActionsRow();
+        Button cancel = pill("取消", CHIP, TEXT);
+        Button save = bigSave("扣除");
+        actions.addView(cancel, marginLp(0, dp(50), 0, 0, dp(6), 0, 1));
+        actions.addView(save, marginLp(0, dp(50), dp(6), 0, 0, 0, 1));
+        panel.addView(actions);
+        cancel.setOnClickListener(v -> dialog.dismiss());
+        save.setOnClickListener(v -> {
+            int paid = 0;
+            try { paid = Integer.parseInt(repay.getText().toString().replace(",", "").trim()); } catch (Exception ignored) { }
+            if (paid <= 0) {
+                Toast.makeText(this, "還款金額要大於 0", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            List<DebtEntry> list = loadDebts();
+            if (index < list.size()) {
+                DebtEntry e = list.get(index);
+                e.amount = Math.max(0, e.amount - paid);
+                if (e.amount <= 0) {
+                    list.remove(index);
+                    Toast.makeText(this, "已還清，已移除這筆欠款", Toast.LENGTH_SHORT).show();
+                } else {
+                    Toast.makeText(this, "已扣除，剩下 " + TransactionStore.money(e.amount), Toast.LENGTH_SHORT).show();
+                }
+                saveDebts(list);
+            }
+            dialog.dismiss();
+            showDebtTracker();
+        });
+        showCustomDialog(dialog, panel);
+    }
+
+
     private void showSettings() {
         tab = 3;
         applyModeColors();
@@ -1182,7 +1518,8 @@ public class MainActivity extends Activity {
 
         LinearLayout widgetSec = section("桌面小工具與載具");
         widgetSec.addView(settingButton("設定載具條碼", carrierSubtitle(), v -> showCarrierBarcodeDialog()));
-        widgetSec.addView(settingButton("桌面小工具說明", "有兩種：簡易記帳小工具、載具條碼＋餘額小工具", v -> showWidgetInfoDialog()));
+        widgetSec.addView(settingButton("圖片小工具設定", widgetImageSubtitle(), v -> showWidgetImageSettingsDialog()));
+        widgetSec.addView(settingButton("桌面小工具說明", "有三種：簡易、載具記帳、圖片＋載具記帳", v -> showWidgetInfoDialog()));
         box.addView(widgetSec, marginLp(-1, -2, 0, 0, 0, dp(10)));
 
         LinearLayout sources = section("通知偵測來源（自動抓取）");
@@ -1257,7 +1594,7 @@ public class MainActivity extends Activity {
         advanced.addView(featureRow("月底預估花費", "依照目前花費速度推估月底可能花多少"));
         box.addView(advanced);
 
-        TextView version = text("AutoLedger V18", 12, MUTED, false);
+        TextView version = text("AutoLedger V19", 12, MUTED, false);
         version.setGravity(Gravity.CENTER);
         version.setPadding(0, dp(16), 0, dp(10));
         box.addView(version);
@@ -1492,7 +1829,7 @@ public class MainActivity extends Activity {
     }
 
     private void showOnboarding() {
-        showRoundedInfoDialog("歡迎使用自動記帳 V18", "這版新增 / 優化：\n\n1. 記錄標題改用分類名稱，分類改成茶飲，列表就顯示茶飲。\n2. 修改紀錄可以選圖標，圖標會跟著分類顯示。\n3. 自動通知先保留原始內容，不強制用 LINE 錢包或發票載具當標題。\n4. 介面與彈窗改成更圓弧，並依深色 / 淺色模式調整顏色。\n5. 防重複、CSV、備份、還原、清除資料都保留。", "我知道了", v -> AppSettings.setBool(this, AppSettings.KEY_ONBOARDED, true), "通知用途", v -> showNotificationPurpose());
+        showRoundedInfoDialog("歡迎使用自動記帳 V19", "這版新增 / 優化：\n\n1. 新增圖片＋載具＋記帳桌面小工具。\n2. 可在設定中選圖片，並調整小工具圖片區域大小。\n3. 圖片小工具保留載具、餘額、支出與收入，拿掉輸入金額欄。\n4. 三條線側邊選單新增欠款紀錄，可記誰欠你錢，也能扣還款。\n5. 防重複、CSV、備份、還原、清除資料都保留。", "我知道了", v -> AppSettings.setBool(this, AppSettings.KEY_ONBOARDED, true), "通知用途", v -> showNotificationPurpose());
     }
 
 

@@ -10,8 +10,8 @@ android {
         applicationId 'com.enyu.autoledger'
         minSdk 26
         targetSdk 35
-        versionCode 17
-        versionName '1.0.0-v16-icon-rounded-theme'
+        versionCode 19
+        versionName '1.0.0-v19-photo-widget-debt'
     }
 
     signingConfigs {

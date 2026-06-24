@@ -22,6 +22,7 @@ public class BalanceWidgetProvider extends AppWidgetProvider {
         int[] ids = manager.getAppWidgetIds(name);
         if (ids != null) for (int id : ids) updateWidget(context.getApplicationContext(), manager, id);
         try { CarrierBalanceWidgetProvider.updateAll(context); } catch (Exception ignored) { }
+        try { CarrierPhotoWidgetProvider.updateAll(context); } catch (Exception ignored) { }
     }
 
     private static void updateWidget(Context context, AppWidgetManager manager, int widgetId) {
