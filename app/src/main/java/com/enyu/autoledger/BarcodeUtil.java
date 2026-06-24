@@ -35,6 +35,14 @@ public class BarcodeUtil {
     }
 
     public static Bitmap code39(String raw, int width, int height) {
+        return code39Internal(raw, width, height, true);
+    }
+
+    public static Bitmap code39BarsOnly(String raw, int width, int height) {
+        return code39Internal(raw, width, height, false);
+    }
+
+    private static Bitmap code39Internal(String raw, int width, int height, boolean showText) {
         String data = normalizeCarrier(raw);
         if (data.isEmpty()) data = "/ABC123";
         String encoded = "*" + data + "*";
@@ -56,7 +64,7 @@ public class BarcodeUtil {
         p.setColor(Color.BLACK);
         float x = quiet * scale;
         float top = Math.max(2, height * 0.08f);
-        float bottom = height * 0.78f;
+        float bottom = showText ? height * 0.78f : height * 0.92f;
         for (int i = 0; i < encoded.length(); i++) {
             String pattern = CODE39.get(encoded.charAt(i));
             if (pattern == null) continue;
@@ -67,10 +75,12 @@ public class BarcodeUtil {
             }
             x += narrow * scale;
         }
-        p.setTextAlign(Paint.Align.CENTER);
-        p.setTextSize(Math.max(12, height * 0.16f));
-        p.setColor(Color.BLACK);
-        c.drawText(data, width / 2f, height * 0.95f, p);
+        if (showText) {
+            p.setTextAlign(Paint.Align.CENTER);
+            p.setTextSize(Math.max(12, height * 0.16f));
+            p.setColor(Color.BLACK);
+            c.drawText(data, width / 2f, height * 0.95f, p);
+        }
         return bm;
     }
 }

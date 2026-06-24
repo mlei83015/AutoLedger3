@@ -12,6 +12,7 @@ import android.view.Window;
 import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -60,36 +61,28 @@ public class QuickAddActivity extends Activity {
 
         LinearLayout top = new LinearLayout(this);
         top.setGravity(Gravity.CENTER_VERTICAL);
-        top.setPadding(0, 0, 0, dp(8));
-
-        TextView icon = t(income ? "↗ $" : "↘ $", 16, TEXT, true);
-        icon.setGravity(Gravity.CENTER);
-        icon.setBackground(round(withAlpha(accent, 0x36), dp(24), withAlpha(accent, 0x55)));
-        top.addView(icon, new LinearLayout.LayoutParams(dp(46), dp(46)));
-
-        TextView title = t(income ? "快速新增收入" : "快速新增支出", 23, TEXT, true);
-        top.addView(title, weighted(-2, -2, 1, dp(12), 0, 0, 0));
-
+        TextView title = t(income ? "快速新增收入" : "快速新增支出", 22, TEXT, true);
+        top.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
         TextView close = t("✕", 24, TEXT, true);
         close.setGravity(Gravity.CENTER);
         close.setOnClickListener(v -> finish());
-        top.addView(close, new LinearLayout.LayoutParams(dp(44), dp(44)));
-        root.addView(top);
+        top.addView(close, new LinearLayout.LayoutParams(dp(42), dp(42)));
+        root.addView(top, lp(-1, -2, 0, 0, 0, dp(8)));
 
-        EditText amount = input("金額，例：120", true, accent, "＄");
-        amount.setTextSize(24);
+        EditText amount = input("金額，例如 120", true, accent, "＄");
+        amount.setTextSize(23);
         root.addView(label("金額"));
-        root.addView(amount, lp(-1, dp(56), 0, dp(5), 0, dp(11)));
+        root.addView(amount, lp(-1, dp(54), 0, dp(4), 0, dp(10)));
 
-        EditText category = input(income ? "分類，例：薪水、零用錢" : "分類，例：餐飲、交通", false, accent, "🏷");
+        EditText category = input(income ? "分類，例如 薪水、零用錢" : "分類，例如 餐飲、交通", false, accent, "🏷");
         root.addView(label("分類"));
-        root.addView(category, lp(-1, dp(52), 0, dp(5), 0, dp(13)));
+        root.addView(category, lp(-1, dp(50), 0, dp(4), 0, dp(10)));
 
         root.addView(label("快速常用項目"));
         String[] presets = income
                 ? new String[]{"零用錢", "薪水", "打工", "退款", "紅包", "獎金"}
-                : new String[]{"餐飲", "交通", "飲料", "停車", "全聯", "早餐"};
-        root.addView(presetGrid(presets, category, accent));
+                : new String[]{"餐飲", "交通", "飲料", "停車", "全聯", "早餐", "午餐", "晚餐"};
+        root.addView(presetStrip(presets, category, accent), lp(-1, dp(42), 0, dp(4), 0, dp(12)));
 
         Button save = button("✓ 儲存", ORANGE, Color.WHITE, 18, dp(24));
         save.setOnClickListener(v -> {
@@ -108,22 +101,40 @@ public class QuickAddActivity extends Activity {
                     "桌面小工具",
                     cat,
                     cat,
-                    "桌面快速新增",
+                    "",
                     "widget-manual-" + System.currentTimeMillis()
             );
             boolean ok = TransactionStore.add(this, tx);
             Toast.makeText(this, ok ? "已新增 " + TransactionStore.money(value) : "疑似重複，已略過", Toast.LENGTH_SHORT).show();
             finish();
         });
-        root.addView(save, lp(-1, dp(52), 0, dp(16), 0, 0));
+        root.addView(save, lp(-1, dp(52), 0, 0, 0, 0));
 
         setContentView(root);
         try {
             Window w = getWindow();
             int screenWidth = getResources().getDisplayMetrics().widthPixels;
-            w.setLayout((int) (screenWidth * 0.86f), WindowManager.LayoutParams.WRAP_CONTENT);
+            w.setLayout((int) (screenWidth * 0.84f), WindowManager.LayoutParams.WRAP_CONTENT);
             w.setGravity(Gravity.CENTER);
         } catch (Exception ignored) { }
+    }
+
+    private HorizontalScrollView presetStrip(String[] presets, EditText category, int accent) {
+        HorizontalScrollView hsv = new HorizontalScrollView(this);
+        hsv.setHorizontalScrollBarEnabled(false);
+        hsv.setOverScrollMode(android.view.View.OVER_SCROLL_NEVER);
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        for (String name : presets) {
+            Button b = button(name, CARD_SOFT, accent, 12, dp(18));
+            b.setSingleLine(true);
+            b.setOnClickListener(v -> category.setText(name));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(82), dp(38));
+            lp.setMargins(0, 0, dp(8), 0);
+            row.addView(b, lp);
+        }
+        hsv.addView(row, new HorizontalScrollView.LayoutParams(-2, dp(40)));
+        return hsv;
     }
 
     private LinearLayout presetGrid(String[] presets, EditText category, int accent) {

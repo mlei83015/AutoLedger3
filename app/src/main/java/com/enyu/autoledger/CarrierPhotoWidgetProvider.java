@@ -38,8 +38,9 @@ public class CarrierPhotoWidgetProvider extends AppWidgetProvider {
         RemoteViews views = new RemoteViews(context.getPackageName(), R.layout.widget_carrier_photo);
         views.setTextViewText(R.id.widget_balance, TransactionStore.money(balance));
         views.setTextViewText(R.id.widget_today, "今日 " + TransactionStore.money(today));
-        Bitmap bm = BarcodeUtil.code39(carrier.isEmpty() ? "/ABC123" : carrier, 900, 190);
+        Bitmap bm = BarcodeUtil.code39BarsOnly(carrier.isEmpty() ? "/ABC123" : carrier, 900, 150);
         views.setImageViewBitmap(R.id.widget_carrier_barcode, bm);
+        views.setTextViewText(R.id.widget_carrier_text, carrier.isEmpty() ? "/ABC123" : carrier);
 
         String path = AppSettings.getString(context, AppSettings.KEY_WIDGET_IMAGE_FILE, "");
         Bitmap photo = null;
@@ -47,7 +48,7 @@ public class CarrierPhotoWidgetProvider extends AppWidgetProvider {
             try { photo = BitmapFactory.decodeFile(path); } catch (Exception ignored) { }
         }
         if (photo != null) {
-            views.setImageViewBitmap(R.id.widget_photo, roundedPhoto(photo));
+            views.setImageViewBitmap(R.id.widget_photo, roundedPhoto(photo, 900, 520));
             views.setViewVisibility(R.id.widget_photo_hint, View.GONE);
         } else {
             views.setImageViewResource(R.id.widget_photo, R.drawable.widget_photo_placeholder);
@@ -80,18 +81,25 @@ public class CarrierPhotoWidgetProvider extends AppWidgetProvider {
         manager.updateAppWidget(widgetId, views);
     }
 
-    private static Bitmap roundedPhoto(Bitmap src) {
+    private static Bitmap roundedPhoto(Bitmap src, int targetW, int targetH) {
         if (src == null) return null;
         try {
-            Bitmap out = Bitmap.createBitmap(src.getWidth(), src.getHeight(), Bitmap.Config.ARGB_8888);
+            Bitmap out = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888);
             Canvas c = new Canvas(out);
             Paint p = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG | Paint.DITHER_FLAG);
             Path path = new Path();
-            float r = Math.max(24f, Math.min(src.getWidth(), src.getHeight()) * 0.06f);
-            RectF rect = new RectF(0, 0, src.getWidth(), src.getHeight());
+            float r = Math.max(34f, Math.min(targetW, targetH) * 0.09f);
+            RectF rect = new RectF(0, 0, targetW, targetH);
             path.addRoundRect(rect, r, r, Path.Direction.CW);
             c.clipPath(path);
-            c.drawBitmap(src, 0, 0, p);
+
+            float scale = Math.max(targetW / (float) src.getWidth(), targetH / (float) src.getHeight());
+            float sw = src.getWidth() * scale;
+            float sh = src.getHeight() * scale;
+            float left = (targetW - sw) / 2f;
+            float top = (targetH - sh) / 2f;
+            RectF dst = new RectF(left, top, left + sw, top + sh);
+            c.drawBitmap(src, null, dst, p);
             return out;
         } catch (Exception e) {
             return src;

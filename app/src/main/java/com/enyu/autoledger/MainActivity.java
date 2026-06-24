@@ -37,6 +37,7 @@ import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -581,22 +582,24 @@ public class MainActivity extends Activity {
         applyModeColors();
         manualDirection = direction == null ? "expense" : direction;
         final boolean startIncome = "income".equals(manualDirection);
+
         ScrollView scroll = pageBase();
         LinearLayout box = pageBox(scroll);
+        box.setPadding(dp(16), dp(8), dp(16), dp(10));
 
         LinearLayout top = new LinearLayout(this);
         top.setGravity(Gravity.CENTER_VERTICAL);
-        TextView back = text("‹", 32, TEXT, false);
+        TextView back = text("‹", 30, TEXT, false);
         back.setGravity(Gravity.CENTER);
         back.setOnClickListener(v -> showHome());
-        top.addView(back, new LinearLayout.LayoutParams(dp(40), -2));
+        top.addView(back, new LinearLayout.LayoutParams(dp(38), dp(38)));
         TextView title = text("手動新增", 20, TEXT, true);
         title.setGravity(Gravity.CENTER);
         top.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
-        TextView more = text("⋯", 26, MUTED, true);
-        more.setGravity(Gravity.RIGHT);
-        top.addView(more, new LinearLayout.LayoutParams(dp(40), -2));
-        box.addView(top);
+        TextView more = text("⋯", 24, MUTED, true);
+        more.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        top.addView(more, new LinearLayout.LayoutParams(dp(38), dp(38)));
+        box.addView(top, marginLp(-1, -2, 0, 0, 0, dp(8)));
 
         LinearLayout seg = new LinearLayout(this);
         seg.setOrientation(LinearLayout.HORIZONTAL);
@@ -604,82 +607,67 @@ public class MainActivity extends Activity {
         Button incomeBtn = pill("↑  收入", startIncome ? PURPLE : CHIP, startIncome ? 0xFFFFFFFF : TEXT);
         expenseBtn.setOnClickListener(v -> showManual("expense"));
         incomeBtn.setOnClickListener(v -> showManual("income"));
-        seg.addView(expenseBtn, marginLp(0, dp(54), 0, 0, dp(6), 0, 1));
-        seg.addView(incomeBtn, marginLp(0, dp(54), dp(6), 0, 0, 0, 1));
-        box.addView(seg, marginLp(-1, -2, 0, dp(14), 0, dp(14)));
+        seg.addView(expenseBtn, marginLp(0, dp(48), 0, 0, dp(8), 0, 1));
+        seg.addView(incomeBtn, marginLp(0, dp(48), dp(8), 0, 0, 0, 1));
+        box.addView(seg, marginLp(-1, -2, 0, 0, 0, dp(10)));
 
         final EditText amountInput = edit("金額，例如 120", true);
-        amountInput.setTextSize(27);
+        amountInput.setTextSize(24);
         amountInput.setInputType(InputType.TYPE_CLASS_NUMBER);
         amountInput.setTextColor(TEXT);
         box.addView(label("金額"));
-        box.addView(amountInput, marginLp(-1, dp(60), 0, 0, 0, dp(12)));
+        box.addView(amountInput, marginLp(-1, dp(50), 0, 0, 0, dp(8)));
 
         final EditText categoryInput = edit(startIncome ? "分類，例如 薪水、零用錢" : "分類，例如 餐飲、交通", false);
         box.addView(label("分類"));
-        box.addView(categoryInput, marginLp(-1, dp(54), 0, 0, 0, dp(6)));
-        LinearLayout manualCategorySuggestions = miniCategoryChips(categoryInput, startIncome);
-        manualCategorySuggestions.setVisibility(View.GONE);
-        box.addView(manualCategorySuggestions, marginLp(-1, -2, 0, 0, 0, dp(10)));
-        categoryInput.setOnFocusChangeListener((v, hasFocus) -> { if (hasFocus) manualCategorySuggestions.setVisibility(View.VISIBLE); });
-        categoryInput.setOnClickListener(v -> manualCategorySuggestions.setVisibility(View.VISIBLE));
+        box.addView(categoryInput, marginLp(-1, dp(48), 0, 0, 0, dp(8)));
 
-        final EditText merchantInput = edit(startIncome ? "來源，例如 打工、家人、朋友" : "店家 / 項目，例如 午餐、全家、捷運", false);
+        final EditText merchantInput = edit(startIncome ? "來源，例如 打工、家人、朋友" : "店家 / 項目，例如 早餐、全家、捷運", false);
         box.addView(label(startIncome ? "來源" : "店家 / 項目"));
-        box.addView(merchantInput, marginLp(-1, dp(54), 0, 0, 0, dp(12)));
+        box.addView(merchantInput, marginLp(-1, dp(48), 0, 0, 0, dp(8)));
 
-        final EditText noteInput = edit("備註 / 用在哪裡，例如：午餐便當、朋友還錢", false);
-        noteInput.setMinLines(2);
-        noteInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
-        box.addView(label("備註 / 用在哪裡"));
-        box.addView(noteInput, marginLp(-1, dp(76), 0, 0, 0, dp(12)));
+        final String[] noteValue = new String[]{""};
+        final TextView noteChip = smallChip("＋ 備註（可選）", CHIP, MUTED);
+        noteChip.setGravity(Gravity.CENTER_VERTICAL);
+        noteChip.setPadding(dp(14), 0, dp(14), 0);
+        noteChip.setOnClickListener(v -> showNoteDialog(noteValue, noteChip));
+        box.addView(noteChip, marginLp(-1, dp(42), 0, 0, 0, dp(8)));
 
         final long[] selectedTime = new long[]{System.currentTimeMillis()};
         LinearLayout dateCard = new LinearLayout(this);
         dateCard.setOrientation(LinearLayout.HORIZONTAL);
         dateCard.setGravity(Gravity.CENTER_VERTICAL);
-        dateCard.setPadding(dp(16), 0, dp(16), 0);
-        dateCard.setBackground(round(CARD, dp(14), BORDER));
-        TextView calIcon = text("📅", 24, TEXT, false);
+        dateCard.setPadding(dp(12), 0, dp(12), 0);
+        dateCard.setBackground(round(CARD, dp(18), BORDER));
+        TextView calIcon = text("📅", 20, TEXT, false);
         calIcon.setGravity(Gravity.CENTER);
-        dateCard.addView(calIcon, new LinearLayout.LayoutParams(dp(42), -1));
-        LinearLayout dateTexts = new LinearLayout(this);
-        dateTexts.setOrientation(LinearLayout.VERTICAL);
-        TextView dateHint = text("點一下可調整日期與時間", 12, MUTED, false);
-        TextView dateValue = text(formatFullDateMinute(selectedTime[0]), 20, TEXT, true);
-        dateTexts.addView(dateHint);
-        dateTexts.addView(dateValue);
-        dateCard.addView(dateTexts, new LinearLayout.LayoutParams(0, -2, 1));
-        TextView dateArrow = text("›", 28, MUTED, true);
+        dateCard.addView(calIcon, new LinearLayout.LayoutParams(dp(34), -1));
+        TextView dateValue = text(formatFullDateMinute(selectedTime[0]), 18, TEXT, true);
+        dateValue.setSingleLine(true);
+        dateCard.addView(dateValue, new LinearLayout.LayoutParams(0, -2, 1));
+        TextView dateArrow = text("›", 25, MUTED, true);
         dateArrow.setGravity(Gravity.CENTER);
-        dateCard.addView(dateArrow, new LinearLayout.LayoutParams(dp(30), -1));
+        dateCard.addView(dateArrow, new LinearLayout.LayoutParams(dp(24), -1));
         dateCard.setOnClickListener(v -> showDateTimePicker(selectedTime, dateValue));
         box.addView(label("日期 / 時間"));
-        box.addView(dateCard, marginLp(-1, dp(76), 0, 0, 0, dp(16)));
+        box.addView(dateCard, marginLp(-1, dp(50), 0, 0, 0, dp(10)));
 
-        TextView quickTitle = text("快速常用項目（先輸入金額後點選套用）", 14, MUTED, true);
+        TextView quickTitle = text("快速常用項目", 13, MUTED, true);
+        quickTitle.setPadding(0, 0, 0, dp(4));
         box.addView(quickTitle);
-        addPresetChips(box, startIncome, amountInput, categoryInput, merchantInput, noteInput);
-
-        TextView recentTitle = text("最近使用（會記得你之前打過的）", 14, MUTED, true);
-        recentTitle.setPadding(0, dp(10), 0, dp(6));
-        box.addView(recentTitle);
-        addRecentChips(box, startIncome, categoryInput, merchantInput);
+        addPresetHorizontal(box, startIncome, categoryInput, merchantInput);
 
         final Switch addIncomeToBudget = new Switch(this);
         if (startIncome) {
             LinearLayout bonusRow = new LinearLayout(this);
             bonusRow.setOrientation(LinearLayout.HORIZONTAL);
             bonusRow.setGravity(Gravity.CENTER_VERTICAL);
-            bonusRow.setPadding(dp(14), dp(10), dp(10), dp(10));
-            bonusRow.setBackground(round(isDarkMode() ? 0xFF172538 : 0xFFEFFAFF, dp(22), BORDER));
-            LinearLayout bonusTexts = new LinearLayout(this);
-            bonusTexts.setOrientation(LinearLayout.VERTICAL);
-            bonusTexts.addView(text("把這筆收入加回本月可用預算", 14, TEXT, true));
-            bonusTexts.addView(text("例如中獎、獎金：不只加到總餘額，也讓圓形圖可用額度增加", 12, MUTED, false));
-            bonusRow.addView(bonusTexts, new LinearLayout.LayoutParams(0, -2, 1));
+            bonusRow.setPadding(dp(12), dp(6), dp(8), dp(6));
+            bonusRow.setBackground(round(isDarkMode() ? 0xFF172538 : 0xFFEFFAFF, dp(18), BORDER));
+            TextView bonusText = text("加回本月可用預算", 13, TEXT, true);
+            bonusRow.addView(bonusText, new LinearLayout.LayoutParams(0, -2, 1));
             bonusRow.addView(addIncomeToBudget);
-            box.addView(bonusRow, marginLp(-1, -2, 0, dp(10), 0, dp(14)));
+            box.addView(bonusRow, marginLp(-1, dp(44), 0, dp(8), 0, dp(8)));
         }
 
         Button save = bigSave("✓  確認新增");
@@ -694,9 +682,9 @@ public class MainActivity extends Activity {
             boolean income = "income".equals(manualDirection);
             String category = categoryInput.getText().toString().trim();
             String merchant = merchantInput.getText().toString().trim();
-            String note = noteInput.getText().toString().trim();
+            String note = noteValue[0] == null ? "" : noteValue[0].trim();
             if (category.isEmpty()) category = income ? "收入" : "未分類";
-            if (merchant.isEmpty()) merchant = income ? category : category;
+            if (merchant.isEmpty()) merchant = category;
             Transaction tx = new Transaction(selectedTime[0], amount, income ? "income" : "expense", "手動新增", merchant, category, note, "manual-" + selectedTime[0] + "-" + System.currentTimeMillis());
             TransactionStore.add(this, tx);
             if (income && addIncomeToBudget.isChecked()) {
@@ -707,9 +695,44 @@ public class MainActivity extends Activity {
             }
             showHome();
         });
-        box.addView(save, marginLp(-1, dp(58), 0, dp(18), 0, dp(24)));
+        box.addView(save, marginLp(-1, dp(54), 0, dp(12), 0, 0));
 
         setPage(scroll);
+    }
+
+    private void showNoteDialog(final String[] noteValue, final TextView noteChip) {
+        final EditText input = edit("備註 / 用在哪裡", false);
+        input.setSingleLine(false);
+        input.setMinLines(3);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        input.setText(noteValue[0]);
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(20), dp(16), dp(20), dp(14));
+        panel.setBackground(round(CARD, dp(24), BORDER));
+        panel.addView(text("備註", 20, TEXT, true));
+        panel.addView(text("可留空，之後點紀錄也能修改。", 13, MUTED, false), marginLp(-1, -2, 0, dp(2), 0, dp(10)));
+        panel.addView(input, marginLp(-1, dp(112), 0, 0, 0, dp(12)));
+        LinearLayout actions = new LinearLayout(this);
+        actions.setGravity(Gravity.RIGHT);
+        Button cancel = dialogBtn("取消");
+        Button save = dialogBtn("儲存");
+        actions.addView(cancel, marginLp(dp(92), dp(44), 0, 0, dp(8), 0));
+        actions.addView(save, marginLp(dp(92), dp(44), dp(8), 0, 0, 0));
+        panel.addView(actions);
+        AlertDialog dialog = new AlertDialog.Builder(this).create();
+        dialog.setView(panel);
+        cancel.setOnClickListener(v -> dialog.dismiss());
+        save.setOnClickListener(v -> {
+            noteValue[0] = input.getText().toString().trim();
+            noteChip.setText(noteValue[0].isEmpty() ? "＋ 備註（可選）" : "備註：" + shortText(noteValue[0], 18));
+            dialog.dismiss();
+        });
+        dialog.setOnShowListener(d -> {
+            Window w = dialog.getWindow();
+            if (w != null) w.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+        });
+        dialog.show();
     }
 
     private String formatFullDateMinute(long time) {
@@ -738,6 +761,53 @@ public class MainActivity extends Activity {
         }, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH));
         dpd.setTitle("選擇日期");
         dpd.show();
+    }
+
+    private void addPresetHorizontal(LinearLayout box, boolean income, EditText category, EditText merchant) {
+        HorizontalScrollView hsv = new HorizontalScrollView(this);
+        hsv.setHorizontalScrollBarEnabled(false);
+        hsv.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        List<String> presets = income ? AppSettings.getQuickIncome(this) : AppSettings.getQuickExpense(this);
+        if (presets == null || presets.isEmpty()) {
+            presets = new ArrayList<>();
+            String[] defaults = income ? new String[]{"零用錢", "薪水", "打工", "退款", "紅包", "獎金"} : new String[]{"餐飲", "交通", "飲料", "停車", "全聯", "早餐", "午餐", "晚餐"};
+            for (String d : defaults) presets.add(d);
+        }
+        for (String line : presets) {
+            String[] p = line.split("\\|");
+            final String name = p.length > 0 ? p[0].trim() : line.trim();
+            if (name.isEmpty()) continue;
+            final String presetCategory = p.length > 2 ? p[2].trim() : (income ? guessIncomeCategory(name) : guessCategory(name));
+            Button chip = smallChip(name, income ? 0xFFF2F0FF : 0xFFFFF3EA, income ? PURPLE : ORANGE);
+            chip.setTextSize(12);
+            chip.setMinHeight(dp(36));
+            chip.setPadding(dp(10), 0, dp(10), 0);
+            chip.setOnClickListener(v -> {
+                category.setText(presetCategory);
+                merchant.setText(name);
+            });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(86), dp(38));
+            lp.setMargins(0, 0, dp(8), 0);
+            row.addView(chip, lp);
+        }
+        hsv.addView(row, new HorizontalScrollView.LayoutParams(-2, dp(40)));
+        box.addView(hsv, marginLp(-1, dp(42), 0, 0, 0, dp(4)));
+    }
+
+    private String shortText(String value, int max) {
+        if (value == null) return "";
+        String v = value.trim().replace("\n", " ");
+        return v.length() <= max ? v : v.substring(0, max) + "…";
+    }
+
+    private Button dialogBtn(String text) {
+        Button b = smallChip(text, CARD, TEXT);
+        b.setTextSize(14);
+        b.setTypeface(Typeface.DEFAULT_BOLD);
+        b.setMinHeight(dp(42));
+        return b;
     }
 
     private void addPresetChips(LinearLayout box, boolean income, EditText amount, EditText category, EditText merchant, EditText note) {
@@ -1494,7 +1564,7 @@ public class MainActivity extends Activity {
 
 
     private void showWidgetInfoDialog() {
-        showRoundedInfoDialog("桌面小工具", "V21 有三種桌面小工具：\n\n1. 簡易記帳小工具：顯示餘額、今日花費，點「支出／收入」快速新增。\n\n2. 載具＋記帳小工具：顯示載具條碼、餘額、今日花費、輸入金額入口。\n\n3. 圖片＋載具＋記帳小工具：最上方顯示你裁切好的圖片，中間顯示載具條碼，下方顯示餘額與支出 / 收入。點小工具圖片可回到 App 修改圖片。", "知道了", null, "圖片設定", v -> showWidgetImageSettingsDialog());
+        showRoundedInfoDialog("桌面小工具", "V22 有三種桌面小工具：\n\n1. 簡易記帳小工具：顯示餘額、今日花費，點「支出／收入」快速新增。\n\n2. 載具＋記帳小工具：顯示載具條碼、餘額、今日花費、輸入金額入口。\n\n3. 圖片＋載具＋記帳小工具：最上方顯示你裁切好的圖片，中間顯示載具條碼，下方顯示餘額與支出 / 收入。點小工具圖片可回到 App 修改圖片。", "知道了", null, "圖片設定", v -> showWidgetImageSettingsDialog());
     }
 
 
@@ -1899,7 +1969,7 @@ public class MainActivity extends Activity {
         advanced.addView(featureRow("月底預估花費", "依照目前花費速度推估月底可能花多少"));
         box.addView(advanced);
 
-        TextView version = text("AutoLedger V21", 12, MUTED, false);
+        TextView version = text("AutoLedger V22", 12, MUTED, false);
         version.setGravity(Gravity.CENTER);
         version.setPadding(0, dp(16), 0, dp(10));
         box.addView(version);
@@ -2142,7 +2212,7 @@ public class MainActivity extends Activity {
     }
 
     private void showOnboarding() {
-        showRoundedInfoDialog("歡迎使用自動記帳 V21", "這版新增 / 優化：\n\n1. 修好圖片小工具載入圖片失敗問題。\n2. 圖片改成從手機相簿選取，並可預覽裁切 4:3 區塊。\n3. 小工具版面固定，按鈕不會因手機寬度不同而歪掉。\n4. 新增收入時可選擇加回本月可用預算。\n5. 防重複、CSV、備份、還原、清除資料都保留。", "我知道了", v -> AppSettings.setBool(this, AppSettings.KEY_ONBOARDED, true), "通知用途", v -> showNotificationPurpose());
+        showRoundedInfoDialog("歡迎使用自動記帳 V22", "這版新增 / 優化：\n\n1. 圖片小工具照片改成圓角裁切，貼齊背景卡片。\n2. 載具條碼圖片只顯示條碼，號碼另外顯示，避免被壓扁。\n3. 手動新增頁縮小版面，不用往下滑就能看到確認新增。\n4. 備註改成點開填寫，快速常用項目改成橫向滑動。\n5. 防重複、CSV、備份、還原、清除資料都保留。", "我知道了", v -> AppSettings.setBool(this, AppSettings.KEY_ONBOARDED, true), "通知用途", v -> showNotificationPurpose());
     }
 
     private void showNotificationPurpose() {
