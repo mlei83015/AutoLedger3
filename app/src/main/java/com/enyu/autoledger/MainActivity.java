@@ -6,6 +6,7 @@ import android.app.AlertDialog;
 import android.app.DatePickerDialog;
 import android.app.TimePickerDialog;
 import android.content.ComponentName;
+import android.content.Context;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Intent;
@@ -16,6 +17,10 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Rect;
+import android.graphics.Matrix;
+import android.graphics.Paint;
+import android.graphics.RectF;
+import android.graphics.Path;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
@@ -24,6 +29,8 @@ import android.provider.Settings;
 import android.text.InputType;
 import android.text.TextUtils;
 import android.view.Gravity;
+import android.view.MotionEvent;
+import android.view.ScaleGestureDetector;
 import android.view.Window;
 import android.view.View;
 import android.view.ViewGroup;
@@ -1056,7 +1063,12 @@ public class MainActivity extends Activity {
         encourage.setPadding(0, dp(14), 0, 0);
         panel.addView(encourage);
 
-        AlertDialog dialog = new AlertDialog.Builder(this).setView(panel).create();
+        ScrollView menuScroll = new ScrollView(this);
+        menuScroll.setFillViewport(false);
+        menuScroll.setVerticalScrollBarEnabled(false);
+        if (Build.VERSION.SDK_INT >= 9) menuScroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        menuScroll.addView(panel, new ScrollView.LayoutParams(-1, -2));
+        AlertDialog dialog = new AlertDialog.Builder(this).setView(menuScroll).create();
         dialog.setOnShowListener(d -> {
             if (dialog.getWindow() != null) dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
         });
@@ -1276,48 +1288,25 @@ public class MainActivity extends Activity {
         final AlertDialog dialog = new AlertDialog.Builder(this).create();
         LinearLayout panel = dialogPanel(dp(30));
         panel.addView(text("裁切小工具圖片", 21, TEXT, true), marginLp(-1, -2, 0, 0, 0, dp(4)));
-        panel.addView(text("固定 4:3 區塊。用下方按鈕移動或放大，預覽看到的就是桌面小工具會顯示的區塊。", 13, MUTED, false), marginLp(-1, -2, 0, 0, 0, dp(10)));
-        ImageView preview = new ImageView(this);
-        preview.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        preview.setBackground(round(CHIP, dp(22), BORDER));
-        panel.addView(preview, marginLp(-1, dp(190), 0, 0, 0, dp(10)));
-        final float[] cx = new float[]{0.5f};
-        final float[] cy = new float[]{0.5f};
-        final float[] zoom = new float[]{1.0f};
-        refreshCropPreview(preview, src, cx, cy, zoom);
+        panel.addView(text("用手指拖曳照片、雙指縮放。白色框看到的 4:3 區塊，就是桌面小工具會顯示的圖片。", 13, MUTED, false), marginLp(-1, -2, 0, 0, 0, dp(10)));
 
-        String[][] rows = new String[][]{{"↖", "↑", "↗"}, {"←", "放大", "→"}, {"↙", "↓", "縮小"}};
-        for (String[] rowLabels : rows) {
-            LinearLayout row = dialogActionsRow();
-            for (String label : rowLabels) {
-                Button b = smallChip(label, CHIP, TEXT);
-                b.setOnClickListener(v -> {
-                    String t = ((Button) v).getText().toString();
-                    float step = 0.08f / zoom[0];
-                    if (t.contains("左") || t.equals("←") || t.equals("↖") || t.equals("↙")) cx[0] -= step;
-                    if (t.contains("右") || t.equals("→") || t.equals("↗") || t.equals("↘")) cx[0] += step;
-                    if (t.contains("↑") || t.equals("↖") || t.equals("↗")) cy[0] -= step;
-                    if (t.contains("↓") || t.equals("↙") || t.equals("↘")) cy[0] += step;
-                    if (t.contains("放大")) zoom[0] = Math.min(3f, zoom[0] + 0.2f);
-                    if (t.contains("縮小")) zoom[0] = Math.max(1f, zoom[0] - 0.2f);
-                    cx[0] = Math.max(0f, Math.min(1f, cx[0]));
-                    cy[0] = Math.max(0f, Math.min(1f, cy[0]));
-                    refreshCropPreview(preview, src, cx, cy, zoom);
-                });
-                row.addView(b, marginLp(0, dp(42), dp(3), dp(3), dp(3), dp(3), 1));
-            }
-            panel.addView(row);
-        }
+        PhotoCropView cropView = new PhotoCropView(this, src);
+        cropView.setBackground(round(CHIP, dp(22), BORDER));
+        panel.addView(cropView, marginLp(-1, dp(300), 0, 0, 0, dp(12)));
+
+        TextView hint = text("提示：圖片不會被壓扁，只會依照你框選的位置裁切。", 12, MUTED, false);
+        hint.setGravity(Gravity.CENTER);
+        panel.addView(hint, marginLp(-1, -2, 0, 0, 0, dp(8)));
 
         LinearLayout actions = dialogActionsRow();
         Button cancel = pill("取消", CHIP, TEXT);
         Button save = bigSave("✓ 儲存圖片");
-        actions.addView(cancel, marginLp(0, dp(52), 0, dp(10), dp(6), 0, 1));
-        actions.addView(save, marginLp(0, dp(52), dp(6), dp(10), 0, 0, 1));
+        actions.addView(cancel, marginLp(0, dp(52), 0, dp(8), dp(6), 0, 1));
+        actions.addView(save, marginLp(0, dp(52), dp(6), dp(8), 0, 0, 1));
         panel.addView(actions);
         cancel.setOnClickListener(v -> { dialog.dismiss(); showSettings(); });
         save.setOnClickListener(v -> {
-            Bitmap crop = cropWidgetBitmap(src, cx[0], cy[0], zoom[0]);
+            Bitmap crop = cropView.getCroppedBitmap(1200, 900);
             String path = saveWidgetPhoto(crop);
             if (path.isEmpty()) {
                 Toast.makeText(this, "儲存圖片失敗，請換一張圖試試", Toast.LENGTH_LONG).show();
@@ -1325,7 +1314,7 @@ public class MainActivity extends Activity {
             }
             AppSettings.setString(this, AppSettings.KEY_WIDGET_IMAGE_FILE, path);
             try { CarrierPhotoWidgetProvider.updateAll(this); } catch (Exception ignored) { }
-            Toast.makeText(this, "已設定小工具圖片", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "已設定小工具圖片，點桌面圖片可再次修改", Toast.LENGTH_SHORT).show();
             dialog.dismiss();
             showSettings();
         });
@@ -1333,8 +1322,179 @@ public class MainActivity extends Activity {
     }
 
 
+    private class PhotoCropView extends View {
+        private final Bitmap src;
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG | Paint.DITHER_FLAG);
+        private final Paint shadePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint borderPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Matrix matrix = new Matrix();
+        private final RectF cropRect = new RectF();
+        private final RectF imageRect = new RectF();
+        private final ScaleGestureDetector scaleDetector;
+        private float scale = 1f;
+        private float minScale = 1f;
+        private float tx = 0f;
+        private float ty = 0f;
+        private float lastX = 0f;
+        private float lastY = 0f;
+        private boolean initialized = false;
+
+        PhotoCropView(Context context, Bitmap source) {
+            super(context);
+            src = source;
+            setWillNotDraw(false);
+            setLayerType(View.LAYER_TYPE_SOFTWARE, null);
+            shadePaint.setColor(0x99000000);
+            borderPaint.setStyle(Paint.Style.STROKE);
+            borderPaint.setStrokeWidth(dp(2));
+            borderPaint.setColor(0xFFFFFFFF);
+            scaleDetector = new ScaleGestureDetector(context, new ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                @Override public boolean onScale(ScaleGestureDetector detector) {
+                    float old = scale;
+                    scale = Math.max(minScale, Math.min(minScale * 4.5f, scale * detector.getScaleFactor()));
+                    float factor = scale / old;
+                    float fx = detector.getFocusX();
+                    float fy = detector.getFocusY();
+                    tx = fx - (fx - tx) * factor;
+                    ty = fy - (fy - ty) * factor;
+                    clampImage();
+                    invalidate();
+                    return true;
+                }
+            });
+        }
+
+        @Override protected void onSizeChanged(int w, int h, int oldw, int oldh) {
+            super.onSizeChanged(w, h, oldw, oldh);
+            updateCropRect(w, h);
+            initialized = false;
+            initImageTransform();
+        }
+
+        private void updateCropRect(int w, int h) {
+            float pad = dp(14);
+            float maxW = Math.max(1, w - pad * 2);
+            float maxH = Math.max(1, h - pad * 2);
+            float cw = maxW;
+            float ch = cw * 3f / 4f;
+            if (ch > maxH) {
+                ch = maxH;
+                cw = ch * 4f / 3f;
+            }
+            float left = (w - cw) / 2f;
+            float top = (h - ch) / 2f;
+            cropRect.set(left, top, left + cw, top + ch);
+        }
+
+        private void initImageTransform() {
+            if (src == null || src.getWidth() <= 0 || src.getHeight() <= 0 || cropRect.width() <= 0 || initialized) return;
+            minScale = Math.max(cropRect.width() / src.getWidth(), cropRect.height() / src.getHeight());
+            scale = minScale;
+            tx = cropRect.centerX() - src.getWidth() * scale / 2f;
+            ty = cropRect.centerY() - src.getHeight() * scale / 2f;
+            clampImage();
+            initialized = true;
+        }
+
+        private void updateMatrix() {
+            matrix.reset();
+            matrix.postScale(scale, scale);
+            matrix.postTranslate(tx, ty);
+            imageRect.set(0, 0, src == null ? 1 : src.getWidth(), src == null ? 1 : src.getHeight());
+            matrix.mapRect(imageRect);
+        }
+
+        private void clampImage() {
+            if (src == null) return;
+            if (cropRect.width() <= 0 || cropRect.height() <= 0) return;
+            minScale = Math.max(cropRect.width() / src.getWidth(), cropRect.height() / src.getHeight());
+            if (scale < minScale) scale = minScale;
+            float iw = src.getWidth() * scale;
+            float ih = src.getHeight() * scale;
+            if (iw <= cropRect.width()) tx = cropRect.centerX() - iw / 2f;
+            else {
+                float minTx = cropRect.right - iw;
+                float maxTx = cropRect.left;
+                if (tx < minTx) tx = minTx;
+                if (tx > maxTx) tx = maxTx;
+            }
+            if (ih <= cropRect.height()) ty = cropRect.centerY() - ih / 2f;
+            else {
+                float minTy = cropRect.bottom - ih;
+                float maxTy = cropRect.top;
+                if (ty < minTy) ty = minTy;
+                if (ty > maxTy) ty = maxTy;
+            }
+            updateMatrix();
+        }
+
+        @Override protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            if (src == null) return;
+            initImageTransform();
+            updateMatrix();
+            Path clip = new Path();
+            RectF whole = new RectF(0, 0, getWidth(), getHeight());
+            clip.addRoundRect(whole, dp(22), dp(22), Path.Direction.CW);
+            int save = canvas.save();
+            canvas.clipPath(clip);
+            canvas.drawColor(isDarkMode() ? 0xFF111923 : 0xFFF7FCFF);
+            canvas.drawBitmap(src, matrix, paint);
+            canvas.drawRect(0, 0, getWidth(), cropRect.top, shadePaint);
+            canvas.drawRect(0, cropRect.bottom, getWidth(), getHeight(), shadePaint);
+            canvas.drawRect(0, cropRect.top, cropRect.left, cropRect.bottom, shadePaint);
+            canvas.drawRect(cropRect.right, cropRect.top, getWidth(), cropRect.bottom, shadePaint);
+            canvas.drawRoundRect(cropRect, dp(20), dp(20), borderPaint);
+            canvas.restoreToCount(save);
+        }
+
+        @Override public boolean onTouchEvent(MotionEvent event) {
+            scaleDetector.onTouchEvent(event);
+            if (event.getPointerCount() == 1 && !scaleDetector.isInProgress()) {
+                if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                    lastX = event.getX();
+                    lastY = event.getY();
+                    return true;
+                } else if (event.getActionMasked() == MotionEvent.ACTION_MOVE) {
+                    float dx = event.getX() - lastX;
+                    float dy = event.getY() - lastY;
+                    tx += dx;
+                    ty += dy;
+                    lastX = event.getX();
+                    lastY = event.getY();
+                    clampImage();
+                    invalidate();
+                    return true;
+                }
+            }
+            return true;
+        }
+
+        Bitmap getCroppedBitmap(int outW, int outH) {
+            if (src == null) return null;
+            clampImage();
+            float left = (cropRect.left - tx) / scale;
+            float top = (cropRect.top - ty) / scale;
+            float right = (cropRect.right - tx) / scale;
+            float bottom = (cropRect.bottom - ty) / scale;
+            Rect srcRect = new Rect(
+                    Math.max(0, Math.round(left)),
+                    Math.max(0, Math.round(top)),
+                    Math.min(src.getWidth(), Math.round(right)),
+                    Math.min(src.getHeight(), Math.round(bottom))
+            );
+            if (srcRect.width() <= 0 || srcRect.height() <= 0) return null;
+            Bitmap out = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888);
+            Canvas c = new Canvas(out);
+            c.drawColor(Color.TRANSPARENT);
+            c.drawBitmap(src, srcRect, new Rect(0, 0, outW, outH), paint);
+            return out;
+        }
+    }
+
+
     private void showWidgetInfoDialog() {
-        showRoundedInfoDialog("桌面小工具", "V20 有三種桌面小工具：\n\n1. 簡易記帳小工具：顯示餘額、今日花費，點「支出／收入」快速新增。\n\n2. 載具＋記帳小工具：顯示載具條碼、餘額、今日花費、輸入金額入口。\n\n3. 圖片＋載具＋記帳小工具：最上方顯示你裁切好的圖片，中間顯示載具條碼，下方顯示餘額與支出 / 收入。點小工具圖片可回到 App 修改圖片。", "知道了", null, "圖片設定", v -> showWidgetImageSettingsDialog());
+        showRoundedInfoDialog("桌面小工具", "V21 有三種桌面小工具：\n\n1. 簡易記帳小工具：顯示餘額、今日花費，點「支出／收入」快速新增。\n\n2. 載具＋記帳小工具：顯示載具條碼、餘額、今日花費、輸入金額入口。\n\n3. 圖片＋載具＋記帳小工具：最上方顯示你裁切好的圖片，中間顯示載具條碼，下方顯示餘額與支出 / 收入。點小工具圖片可回到 App 修改圖片。", "知道了", null, "圖片設定", v -> showWidgetImageSettingsDialog());
     }
 
 
@@ -1739,7 +1899,7 @@ public class MainActivity extends Activity {
         advanced.addView(featureRow("月底預估花費", "依照目前花費速度推估月底可能花多少"));
         box.addView(advanced);
 
-        TextView version = text("AutoLedger V20", 12, MUTED, false);
+        TextView version = text("AutoLedger V21", 12, MUTED, false);
         version.setGravity(Gravity.CENTER);
         version.setPadding(0, dp(16), 0, dp(10));
         box.addView(version);
@@ -1982,7 +2142,7 @@ public class MainActivity extends Activity {
     }
 
     private void showOnboarding() {
-        showRoundedInfoDialog("歡迎使用自動記帳 V20", "這版新增 / 優化：\n\n1. 修好圖片小工具載入圖片失敗問題。\n2. 圖片改成從手機相簿選取，並可預覽裁切 4:3 區塊。\n3. 小工具版面固定，按鈕不會因手機寬度不同而歪掉。\n4. 新增收入時可選擇加回本月可用預算。\n5. 防重複、CSV、備份、還原、清除資料都保留。", "我知道了", v -> AppSettings.setBool(this, AppSettings.KEY_ONBOARDED, true), "通知用途", v -> showNotificationPurpose());
+        showRoundedInfoDialog("歡迎使用自動記帳 V21", "這版新增 / 優化：\n\n1. 修好圖片小工具載入圖片失敗問題。\n2. 圖片改成從手機相簿選取，並可預覽裁切 4:3 區塊。\n3. 小工具版面固定，按鈕不會因手機寬度不同而歪掉。\n4. 新增收入時可選擇加回本月可用預算。\n5. 防重複、CSV、備份、還原、清除資料都保留。", "我知道了", v -> AppSettings.setBool(this, AppSettings.KEY_ONBOARDED, true), "通知用途", v -> showNotificationPurpose());
     }
 
     private void showNotificationPurpose() {

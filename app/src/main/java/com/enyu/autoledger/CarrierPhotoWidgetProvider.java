@@ -8,6 +8,10 @@ import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.Path;
+import android.graphics.RectF;
 import android.os.Build;
 import android.view.View;
 import android.widget.RemoteViews;
@@ -43,7 +47,7 @@ public class CarrierPhotoWidgetProvider extends AppWidgetProvider {
             try { photo = BitmapFactory.decodeFile(path); } catch (Exception ignored) { }
         }
         if (photo != null) {
-            views.setImageViewBitmap(R.id.widget_photo, photo);
+            views.setImageViewBitmap(R.id.widget_photo, roundedPhoto(photo));
             views.setViewVisibility(R.id.widget_photo_hint, View.GONE);
         } else {
             views.setImageViewResource(R.id.widget_photo, R.drawable.widget_photo_placeholder);
@@ -74,6 +78,24 @@ public class CarrierPhotoWidgetProvider extends AppWidgetProvider {
         views.setOnClickPendingIntent(R.id.widget_income, pending(context, 7300 + widgetId, incomeIntent));
 
         manager.updateAppWidget(widgetId, views);
+    }
+
+    private static Bitmap roundedPhoto(Bitmap src) {
+        if (src == null) return null;
+        try {
+            Bitmap out = Bitmap.createBitmap(src.getWidth(), src.getHeight(), Bitmap.Config.ARGB_8888);
+            Canvas c = new Canvas(out);
+            Paint p = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG | Paint.DITHER_FLAG);
+            Path path = new Path();
+            float r = Math.max(24f, Math.min(src.getWidth(), src.getHeight()) * 0.06f);
+            RectF rect = new RectF(0, 0, src.getWidth(), src.getHeight());
+            path.addRoundRect(rect, r, r, Path.Direction.CW);
+            c.clipPath(path);
+            c.drawBitmap(src, 0, 0, p);
+            return out;
+        } catch (Exception e) {
+            return src;
+        }
     }
 
     private static PendingIntent pending(Context context, int requestCode, Intent intent) {
