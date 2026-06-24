@@ -2422,12 +2422,18 @@ public class MainActivity extends Activity {
     }
 
     private void showOnboarding() {
-        showRoundedInfoDialog("歡迎使用自動記帳 V25", "這版新增 / 優化：
-
-1. 匯率換算改成台幣 1 元可換多少外幣，常用幣種更清楚。
-2. 幣種選擇改成可滑動清單，新增更多常見幣別。
-3. 選取幣種的顏色加強，深色模式下更容易看清楚。
-4. LINE Pay 點數折抵、防重複、桌面小工具、CSV、備份、還原都保留。", "我知道了", v -> AppSettings.setBool(this, AppSettings.KEY_ONBOARDED, true), "通知用途", v -> showNotificationPurpose());
+        showRoundedInfoDialog(
+                "歡迎使用自動記帳 V25",
+                "這版新增 / 優化：\n\n"
+                        + "1. 匯率換算改成台幣 1 元可換多少外幣，常用幣種更清楚。\n"
+                        + "2. 幣種選擇改成可滑動清單，新增更多常見幣別。\n"
+                        + "3. 選取幣種的顏色加強，深色模式下更容易看清楚。\n"
+                        + "4. LINE Pay 點數折抵、防重複、桌面小工具、CSV、備份、還原都保留。",
+                "我知道了",
+                v -> AppSettings.setBool(this, AppSettings.KEY_ONBOARDED, true),
+                "通知用途",
+                v -> showNotificationPurpose()
+        );
     }
 
     private void showNotificationPurpose() {
