@@ -21,13 +21,12 @@ public class FinanceParser {
         String direction = detectDirection(normalized, packageName, appName);
         if (direction == null) return null;
 
-        String merchant = detectMerchant(normalized, title, appName);
-        String lowerAll = (normalized + " " + appName + " " + packageName).toLowerCase(Locale.ROOT);
-        if (lowerAll.contains("載具") || lowerAll.contains("發票") || lowerAll.contains("invoice") || lowerAll.contains("einvoice")) merchant = "發票載具";
-        else if (lowerAll.contains("line") && (lowerAll.contains("pay") || lowerAll.contains("錢包"))) merchant = "LINE錢包";
-        else if (lowerAll.contains("google") || lowerAll.contains("walletnfcrel")) merchant = "Google 錢包";
-        String category = detectCategory(normalized, merchant, direction);
-        String source = appName == null || appName.isEmpty() ? packageName : appName;
+        // V15：自動通知只抓「金額、方向、原始內容」，不要自動填分類與來源。
+        // 使用者可點紀錄進去修改分類 / 來源，避免 App 亂分類造成後續整理更麻煩。
+        // 去重判斷仍會讀 raw 內容，因此 LINE Pay / 載具 / Google 錢包 / 銀行同筆偵測不受影響。
+        String source = "";
+        String merchant = "";
+        String category = "";
         String hash = sha256(packageName + "|" + title + "|" + text + "|" + amount + "|" + (timeMillis / 60000));
         return new Transaction(timeMillis, amount, direction, source, merchant, category, normalized, hash);
     }
