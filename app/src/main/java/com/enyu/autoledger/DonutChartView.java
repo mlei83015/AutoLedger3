@@ -17,6 +17,7 @@ public class DonutChartView extends View {
     private int colorRemain = 0xFFFFA726;
     private int colorIncome = 0xFF16A085;
     private boolean darkMode = false;
+    private String centerLabel = "已使用";
 
     public DonutChartView(Context context) {
         super(context);
@@ -26,6 +27,11 @@ public class DonutChartView extends View {
 
     public void setDarkMode(boolean darkMode) {
         this.darkMode = darkMode;
+        invalidate();
+    }
+
+    public void setCenterLabel(String label) {
+        this.centerLabel = label == null || label.trim().isEmpty() ? "已使用" : label;
         invalidate();
     }
 
@@ -87,7 +93,7 @@ public class DonutChartView extends View {
         textPaint.setTypeface(android.graphics.Typeface.DEFAULT);
         textPaint.setTextSize(dp(13));
         textPaint.setColor(darkMode ? 0xFFAAB3C2 : 0xFF5F6672);
-        canvas.drawText("已使用", w / 2f, h / 2f + dp(18), textPaint);
+        canvas.drawText(centerLabel, w / 2f, h / 2f + dp(18), textPaint);
         textPaint.setColor(darkMode ? 0xFFF5F7FA : 0xFF20242B);
     }
 

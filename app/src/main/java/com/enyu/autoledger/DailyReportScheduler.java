@@ -21,8 +21,16 @@ public class DailyReportScheduler {
         );
 
         Calendar c = Calendar.getInstance();
-        c.set(Calendar.HOUR_OF_DAY, 9);
-        c.set(Calendar.MINUTE, 0);
+        String hhmm = AppSettings.getString(context, AppSettings.KEY_DAILY_NOTIFY_TIME, "09:00");
+        int hour = 9;
+        int minute = 0;
+        try {
+            String[] parts = hhmm.split(":");
+            hour = Math.max(0, Math.min(23, Integer.parseInt(parts[0])));
+            minute = Math.max(0, Math.min(59, Integer.parseInt(parts[1])));
+        } catch (Exception ignored) { }
+        c.set(Calendar.HOUR_OF_DAY, hour);
+        c.set(Calendar.MINUTE, minute);
         c.set(Calendar.SECOND, 0);
         c.set(Calendar.MILLISECOND, 0);
         if (c.getTimeInMillis() <= System.currentTimeMillis()) {

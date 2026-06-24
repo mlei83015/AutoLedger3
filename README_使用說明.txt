@@ -1,3 +1,5 @@
+AutoLedger V8 瀏海安全區與完整報表版
+
 AutoLedger 自動記帳 Android App - V6
 
 這版新增：

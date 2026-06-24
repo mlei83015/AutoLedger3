@@ -3,6 +3,8 @@ package com.enyu.autoledger;
 import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.DatePickerDialog;
+import android.app.TimePickerDialog;
 import android.content.ComponentName;
 import android.content.ClipData;
 import android.content.ClipboardManager;
@@ -18,6 +20,7 @@ import android.provider.Settings;
 import android.text.InputType;
 import android.text.TextUtils;
 import android.view.Gravity;
+import android.view.Window;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
@@ -42,6 +45,8 @@ public class MainActivity extends Activity {
     private LinearLayout nav;
     private int tab = 0;
     private String manualDirection = "expense";
+    private String reportType = "expense";
+    private String reportRange = "month";
 
     private int BG = 0xFFFFFCF7;
     private int CARD = 0xFFFFFFFF;
@@ -79,6 +84,8 @@ public class MainActivity extends Activity {
         root.setOrientation(LinearLayout.VERTICAL);
         applyModeColors();
         root.setBackgroundColor(BG);
+        applySystemBars();
+        root.setPadding(0, safeTopPadding(), 0, 0);
 
         content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
@@ -111,7 +118,7 @@ public class MainActivity extends Activity {
         scroll.setFillViewport(false);
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(dp(16), dp(18), dp(16), dp(18));
+        box.setPadding(dp(16), dp(12), dp(16), dp(18));
         scroll.addView(box, new ScrollView.LayoutParams(-1, -2));
         return scroll;
     }
@@ -137,8 +144,37 @@ public class MainActivity extends Activity {
             BORDER = 0xFFEFEFF2;
             CHIP = 0xFFF7F7F8;
         }
-        if (root != null) root.setBackgroundColor(BG);
+        if (root != null) {
+            root.setBackgroundColor(BG);
+            root.setPadding(0, safeTopPadding(), 0, 0);
+        }
         if (nav != null) nav.setBackgroundColor(dark ? 0xFF111923 : 0xFFFFFFFF);
+        applySystemBars();
+    }
+
+    private void applySystemBars() {
+        try {
+            Window w = getWindow();
+            w.setStatusBarColor(BG);
+            w.setNavigationBarColor(AppSettings.getBool(this, AppSettings.KEY_DARK_MODE, false) ? 0xFF111923 : 0xFFFFFFFF);
+            if (Build.VERSION.SDK_INT >= 23) {
+                int flags = w.getDecorView().getSystemUiVisibility();
+                if (AppSettings.getBool(this, AppSettings.KEY_DARK_MODE, false)) {
+                    flags &= ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+                } else {
+                    flags |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+                }
+                w.getDecorView().setSystemUiVisibility(flags);
+            }
+        } catch (Exception ignored) { }
+    }
+
+    private int safeTopPadding() {
+        int result = dp(12);
+        int resId = getResources().getIdentifier("status_bar_height", "dimen", "android");
+        if (resId > 0) result += getResources().getDimensionPixelSize(resId);
+        else result += dp(28);
+        return result;
     }
 
     private View budgetRow() {
@@ -203,6 +239,7 @@ public class MainActivity extends Activity {
         titleRow.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
         TextView bell = text("🔔", 22, TEXT, false);
         bell.setGravity(Gravity.RIGHT);
+        bell.setOnClickListener(v -> showNotificationSettingsDialog());
         titleRow.addView(bell, new LinearLayout.LayoutParams(dp(40), -2));
         box.addView(titleRow);
 
@@ -416,11 +453,28 @@ public class MainActivity extends Activity {
         box.addView(label("備註 / 用在哪裡"));
         box.addView(noteInput, marginLp(-1, dp(76), 0, 0, 0, dp(12)));
 
-        TextView date = text("📅  " + new SimpleDateFormat("yyyy/MM/dd  HH:mm", Locale.TAIWAN).format(new Date()), 15, TEXT, false);
-        date.setPadding(dp(14), 0, dp(14), 0);
-        date.setBackground(round(CARD, dp(12), BORDER));
+        final long[] selectedTime = new long[]{System.currentTimeMillis()};
+        LinearLayout dateCard = new LinearLayout(this);
+        dateCard.setOrientation(LinearLayout.HORIZONTAL);
+        dateCard.setGravity(Gravity.CENTER_VERTICAL);
+        dateCard.setPadding(dp(16), 0, dp(16), 0);
+        dateCard.setBackground(round(CARD, dp(14), BORDER));
+        TextView calIcon = text("📅", 24, TEXT, false);
+        calIcon.setGravity(Gravity.CENTER);
+        dateCard.addView(calIcon, new LinearLayout.LayoutParams(dp(42), -1));
+        LinearLayout dateTexts = new LinearLayout(this);
+        dateTexts.setOrientation(LinearLayout.VERTICAL);
+        TextView dateHint = text("點一下可調整日期與時間", 12, MUTED, false);
+        TextView dateValue = text(formatFullDateMinute(selectedTime[0]), 20, TEXT, true);
+        dateTexts.addView(dateHint);
+        dateTexts.addView(dateValue);
+        dateCard.addView(dateTexts, new LinearLayout.LayoutParams(0, -2, 1));
+        TextView dateArrow = text("›", 28, MUTED, true);
+        dateArrow.setGravity(Gravity.CENTER);
+        dateCard.addView(dateArrow, new LinearLayout.LayoutParams(dp(30), -1));
+        dateCard.setOnClickListener(v -> showDateTimePicker(selectedTime, dateValue));
         box.addView(label("日期 / 時間"));
-        box.addView(date, marginLp(-1, dp(50), 0, 0, 0, dp(16)));
+        box.addView(dateCard, marginLp(-1, dp(76), 0, 0, 0, dp(16)));
 
         TextView quickTitle = text("快速常用項目（先輸入金額後點選套用）", 14, MUTED, true);
         box.addView(quickTitle);
@@ -446,7 +500,7 @@ public class MainActivity extends Activity {
             String note = noteInput.getText().toString().trim();
             if (category.isEmpty()) category = income ? "收入" : "未分類";
             if (merchant.isEmpty()) merchant = income ? category : category;
-            Transaction tx = new Transaction(System.currentTimeMillis(), amount, income ? "income" : "expense", "手動新增", merchant, category, note, "manual-" + System.currentTimeMillis());
+            Transaction tx = new Transaction(selectedTime[0], amount, income ? "income" : "expense", "手動新增", merchant, category, note, "manual-" + selectedTime[0] + "-" + System.currentTimeMillis());
             TransactionStore.add(this, tx);
             Toast.makeText(this, "已新增" + (income ? "收入 " : "支出 ") + TransactionStore.money(amount), Toast.LENGTH_SHORT).show();
             showHome();
@@ -454,6 +508,34 @@ public class MainActivity extends Activity {
         box.addView(save, marginLp(-1, dp(58), 0, dp(18), 0, dp(24)));
 
         setPage(scroll);
+    }
+
+    private String formatFullDateMinute(long time) {
+        return new SimpleDateFormat("yyyy/MM/dd  HH:mm", Locale.TAIWAN).format(new Date(time));
+    }
+
+    private void showDateTimePicker(final long[] selectedTime, final TextView target) {
+        Calendar c = Calendar.getInstance();
+        c.setTimeInMillis(selectedTime[0]);
+        DatePickerDialog dpd = new DatePickerDialog(this, (view, year, month, dayOfMonth) -> {
+            Calendar picked = Calendar.getInstance();
+            picked.setTimeInMillis(selectedTime[0]);
+            picked.set(Calendar.YEAR, year);
+            picked.set(Calendar.MONTH, month);
+            picked.set(Calendar.DAY_OF_MONTH, dayOfMonth);
+            TimePickerDialog tpd = new TimePickerDialog(this, (timeView, hourOfDay, minute) -> {
+                picked.set(Calendar.HOUR_OF_DAY, hourOfDay);
+                picked.set(Calendar.MINUTE, minute);
+                picked.set(Calendar.SECOND, 0);
+                picked.set(Calendar.MILLISECOND, 0);
+                selectedTime[0] = picked.getTimeInMillis();
+                target.setText(formatFullDateMinute(selectedTime[0]));
+            }, picked.get(Calendar.HOUR_OF_DAY), picked.get(Calendar.MINUTE), true);
+            tpd.setTitle("選擇時間");
+            tpd.show();
+        }, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH));
+        dpd.setTitle("選擇日期");
+        dpd.show();
     }
 
     private void addPresetChips(LinearLayout box, boolean income, EditText amount, EditText category, EditText merchant, EditText note) {
@@ -561,70 +643,87 @@ public class MainActivity extends Activity {
         LinearLayout typeTabs = new LinearLayout(this);
         typeTabs.setOrientation(LinearLayout.HORIZONTAL);
         typeTabs.setBackground(round(AppSettings.getBool(this, AppSettings.KEY_DARK_MODE, false) ? 0xFF202933 : 0xFFF2F3F5, dp(18), BORDER));
-        Button expenseTab = reportTab("支出", true);
-        Button incomeTab = reportTab("收入", false);
-        Button balanceTab = reportTab("結餘", false);
-        typeTabs.addView(expenseTab, new LinearLayout.LayoutParams(0, dp(52), 1));
-        typeTabs.addView(incomeTab, new LinearLayout.LayoutParams(0, dp(52), 1));
-        typeTabs.addView(balanceTab, new LinearLayout.LayoutParams(0, dp(52), 1));
+        typeTabs.addView(reportTab("支出", "expense".equals(reportType), () -> { reportType = "expense"; showStats(); }), new LinearLayout.LayoutParams(0, dp(54), 1));
+        typeTabs.addView(reportTab("收入", "income".equals(reportType), () -> { reportType = "income"; showStats(); }), new LinearLayout.LayoutParams(0, dp(54), 1));
+        typeTabs.addView(reportTab("結餘", "balance".equals(reportType), () -> { reportType = "balance"; showStats(); }), new LinearLayout.LayoutParams(0, dp(54), 1));
         box.addView(typeTabs, marginLp(-1, -2, 0, 0, 0, dp(12)));
-        incomeTab.setOnClickListener(v -> showStatsMessage("收入", TransactionStore.monthIncome(this)));
-        balanceTab.setOnClickListener(v -> showStatsMessage("結餘", TransactionStore.totalBalance(this)));
 
         LinearLayout rangeTabs = new LinearLayout(this);
         rangeTabs.setOrientation(LinearLayout.HORIZONTAL);
-        String[] ranges = {"月", "近六個月", "年", "自訂"};
-        for (int i = 0; i < ranges.length; i++) rangeTabs.addView(rangeChip(ranges[i], i == 0), new LinearLayout.LayoutParams(0, dp(46), 1));
+        rangeTabs.addView(rangeChip("月", "month".equals(reportRange), () -> { reportRange = "month"; showStats(); }), new LinearLayout.LayoutParams(0, dp(48), 1));
+        rangeTabs.addView(rangeChip("近六個月", "six".equals(reportRange), () -> { reportRange = "six"; showStats(); }), new LinearLayout.LayoutParams(0, dp(48), 1));
+        rangeTabs.addView(rangeChip("年", "year".equals(reportRange), () -> { reportRange = "year"; showStats(); }), new LinearLayout.LayoutParams(0, dp(48), 1));
+        rangeTabs.addView(rangeChip("自訂", "custom".equals(reportRange), () -> { reportRange = "custom"; showStats(); }), new LinearLayout.LayoutParams(0, dp(48), 1));
         box.addView(rangeTabs, marginLp(-1, -2, 0, 0, 0, dp(12)));
 
         LinearLayout monthRow = new LinearLayout(this);
         monthRow.setGravity(Gravity.CENTER_VERTICAL);
-        TextView month = text("◀  " + new SimpleDateFormat("yyyy年M月", Locale.TAIWAN).format(new Date()) + "  ▶", 17, TEXT, true);
-        monthRow.addView(month, new LinearLayout.LayoutParams(0, -2, 1));
+        TextView range = text(reportRangeLabel(), 17, TEXT, true);
+        monthRow.addView(range, new LinearLayout.LayoutParams(0, -2, 1));
         TextView currency = text("全幣別 (TWD) ▾", 15, TEXT, true);
         currency.setGravity(Gravity.RIGHT);
         monthRow.addView(currency, new LinearLayout.LayoutParams(0, -2, 1));
         box.addView(monthRow, marginLp(-1, -2, 0, 0, 0, dp(12)));
 
-        int monthExpense = TransactionStore.monthExpense(this);
-        int monthIncome = TransactionStore.monthIncome(this);
-        int budget = Math.max(1, AppSettings.getMonthlyBudget(this));
-        int remaining = Math.max(0, budget - monthExpense);
+        long start = reportStartMillis();
+        long end = reportEndMillis();
+        int expense = TransactionStore.expenseBetween(this, start, end);
+        int income = TransactionStore.incomeBetween(this, start, end);
+        int balance = income - expense;
+        int budget = Math.max(1, AppSettings.getMonthlyBudget(this) * reportMonthFactor());
+
+        int mainValue;
+        int remainValue;
+        int mainColor;
+        String centerLabel;
+        String mainTitle;
+        if ("income".equals(reportType)) {
+            mainValue = income;
+            remainValue = Math.max(0, Math.max(budget, income) - income);
+            mainColor = GREEN;
+            centerLabel = "收入";
+            mainTitle = "總收入";
+        } else if ("balance".equals(reportType)) {
+            mainValue = Math.max(0, balance);
+            int reference = Math.max(1, Math.max(income, expense));
+            remainValue = Math.max(0, reference - mainValue);
+            mainColor = balance >= 0 ? GREEN : CORAL;
+            centerLabel = balance >= 0 ? "結餘" : "赤字";
+            mainTitle = "總結餘";
+        } else {
+            mainValue = expense;
+            remainValue = Math.max(0, budget - expense);
+            mainColor = CORAL;
+            centerLabel = "支出";
+            mainTitle = "總支出";
+        }
+
         LinearLayout chartCard = card();
         chartCard.setGravity(Gravity.CENTER);
         DonutChartView donut = new DonutChartView(this);
         donut.setDarkMode(AppSettings.getBool(this, AppSettings.KEY_DARK_MODE, false));
-        donut.setData(monthExpense, Math.max(0, budget - monthExpense), 0, AppSettings.getPalette(this));
+        donut.setCenterLabel(centerLabel);
+        donut.setData(mainValue, remainValue, 0, AppSettings.getPalette(this));
         chartCard.addView(donut, new LinearLayout.LayoutParams(dp(230), dp(230)));
-        TextView centerSummary = text("總支出  " + TransactionStore.money(monthExpense), 17, TEXT, true);
+        int displayAmount = "balance".equals(reportType) ? balance : mainValue;
+        TextView centerSummary = text(mainTitle + "  " + TransactionStore.money(displayAmount), 18, mainColor, true);
         centerSummary.setGravity(Gravity.CENTER);
         chartCard.addView(centerSummary, marginLp(-1, -2, 0, dp(6), 0, 0));
-        TextView budgetHint = text("本月預算 " + TransactionStore.money(budget) + "｜剩餘 " + TransactionStore.money(remaining), 13, MUTED, false);
+        TextView budgetHint = text("支出 " + TransactionStore.money(expense) + "｜收入 " + TransactionStore.money(income) + "｜預算參考 " + TransactionStore.money(budget), 13, MUTED, false);
         budgetHint.setGravity(Gravity.CENTER);
         chartCard.addView(budgetHint, marginLp(-1, -2, 0, dp(4), 0, dp(6)));
         box.addView(chartCard, marginLp(-1, -2, 0, 0, 0, dp(12)));
 
-        if (monthExpense == 0 && monthIncome == 0) {
-            LinearLayout empty = card();
-            empty.setGravity(Gravity.CENTER);
-            TextView icon = text("▤✎", 45, MUTED, true);
-            icon.setGravity(Gravity.CENTER);
-            empty.addView(icon, marginLp(-1, -2, 0, dp(18), 0, dp(6)));
-            TextView none = text("無記帳記錄", 18, MUTED, true);
-            none.setGravity(Gravity.CENTER);
-            empty.addView(none);
-            Button add = pill("記一筆", CHIP, TEXT);
-            add.setOnClickListener(v -> showManual("expense"));
-            empty.addView(add, marginLp(dp(160), dp(48), 0, dp(12), 0, dp(12)));
-            box.addView(empty);
-        } else {
-            LinearLayout summary = card();
-            summary.addView(text("本月摘要", 18, TEXT, true));
-            summary.addView(text("支出：" + TransactionStore.money(monthExpense) + "　收入：" + TransactionStore.money(monthIncome), 15, TEXT, false));
-            summary.addView(text("結餘：" + TransactionStore.money(monthIncome - monthExpense), 15, monthIncome >= monthExpense ? GREEN : CORAL, true));
+        LinearLayout summary = card();
+        summary.addView(text(reportRangeLabel() + "摘要", 18, TEXT, true));
+        summary.addView(text("支出：" + TransactionStore.money(expense) + "　收入：" + TransactionStore.money(income), 15, TEXT, false));
+        summary.addView(text("結餘：" + TransactionStore.money(balance), 15, balance >= 0 ? GREEN : CORAL, true));
+        if ("month".equals(reportRange)) {
             summary.addView(text("月底預估花費：" + TransactionStore.money(TransactionStore.forecastMonthExpense(this)), 14, MUTED, false));
-            box.addView(summary, marginLp(-1, -2, 0, 0, 0, dp(12)));
+        } else if ("custom".equals(reportRange)) {
+            summary.addView(text("自訂目前先顯示最近 30 天，之後可再做日期區間選擇。", 13, MUTED, false));
         }
+        box.addView(summary, marginLp(-1, -2, 0, 0, 0, dp(12)));
 
         LinearLayout tools = card();
         tools.addView(text("報表工具", 18, TEXT, true));
@@ -646,22 +745,57 @@ public class MainActivity extends Activity {
         setPage(scroll);
     }
 
-    private Button reportTab(String s, boolean selected) {
+    private long reportStartMillis() {
+        Calendar c = Calendar.getInstance();
+        if ("six".equals(reportRange)) {
+            c.add(Calendar.MONTH, -5);
+            c.set(Calendar.DAY_OF_MONTH, 1);
+        } else if ("year".equals(reportRange)) {
+            c.set(Calendar.MONTH, Calendar.JANUARY);
+            c.set(Calendar.DAY_OF_MONTH, 1);
+        } else if ("custom".equals(reportRange)) {
+            c.add(Calendar.DAY_OF_MONTH, -29);
+        } else {
+            c.set(Calendar.DAY_OF_MONTH, 1);
+        }
+        c.set(Calendar.HOUR_OF_DAY, 0);
+        c.set(Calendar.MINUTE, 0);
+        c.set(Calendar.SECOND, 0);
+        c.set(Calendar.MILLISECOND, 0);
+        return c.getTimeInMillis();
+    }
+
+    private long reportEndMillis() {
+        return System.currentTimeMillis() + 60L * 1000L;
+    }
+
+    private int reportMonthFactor() {
+        if ("six".equals(reportRange)) return 6;
+        if ("year".equals(reportRange)) return 12;
+        return 1;
+    }
+
+    private String reportRangeLabel() {
+        if ("six".equals(reportRange)) return "近六個月";
+        if ("year".equals(reportRange)) return new SimpleDateFormat("yyyy年", Locale.TAIWAN).format(new Date());
+        if ("custom".equals(reportRange)) return "自訂：最近 30 天";
+        return new SimpleDateFormat("yyyy年M月", Locale.TAIWAN).format(new Date());
+    }
+
+    private Button reportTab(String s, boolean selected, final Runnable click) {
         Button b = smallChip(s, selected ? 0xFFFFCC55 : CHIP, selected ? 0xFF1F2329 : TEXT);
         b.setTextSize(16);
         b.setTypeface(Typeface.DEFAULT_BOLD);
+        b.setOnClickListener(v -> { if (click != null) click.run(); });
         return b;
     }
 
-    private Button rangeChip(String s, boolean selected) {
+    private Button rangeChip(String s, boolean selected, final Runnable click) {
         Button b = smallChip(s, selected ? 0xFFFFCC55 : (AppSettings.getBool(this, AppSettings.KEY_DARK_MODE, false) ? 0xFF1B2530 : 0xFFF7F7F8), selected ? 0xFF1F2329 : TEXT);
         b.setTextSize(14);
         b.setTypeface(Typeface.DEFAULT_BOLD);
+        b.setOnClickListener(v -> { if (click != null) click.run(); });
         return b;
-    }
-
-    private void showStatsMessage(String name, int amount) {
-        Toast.makeText(this, name + "：" + TransactionStore.money(amount), Toast.LENGTH_SHORT).show();
     }
 
     private void showSideMenu() {
@@ -743,6 +877,48 @@ public class MainActivity extends Activity {
                 .show();
     }
 
+    private void showNotificationSettingsDialog() {
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(8), dp(4), dp(8), dp(4));
+
+        panel.addView(text("通知開關", 17, TEXT, true));
+        panel.addView(switchRow("每日昨日花費摘要", "每天固定時間提醒你昨天花多少", AppSettings.KEY_NOTIFY_DAILY, true));
+        panel.addView(switchRow("自動記帳完成通知", "每記到一筆就跳小通知", AppSettings.KEY_NOTIFY_AUTO_SAVED, true));
+        panel.addView(switchRow("預算提醒", "接近或超過本月預算時提醒", AppSettings.KEY_NOTIFY_BUDGET, true));
+        panel.addView(switchRow("重複資料提醒", "偵測到疑似同一筆時提醒你", AppSettings.KEY_NOTIFY_DUPLICATE, false));
+
+        final EditText time = new EditText(this);
+        time.setHint("09:00");
+        time.setText(AppSettings.getString(this, AppSettings.KEY_DAILY_NOTIFY_TIME, "09:00"));
+        time.setSingleLine(true);
+        time.setInputType(InputType.TYPE_CLASS_TEXT);
+        time.setTextColor(TEXT);
+        time.setHintTextColor(MUTED);
+        time.setPadding(dp(12), 0, dp(12), 0);
+        time.setBackground(round(CARD, dp(12), BORDER));
+        panel.addView(label("每日摘要通知時間（24 小時制）"));
+        panel.addView(time, marginLp(-1, dp(52), 0, dp(4), 0, dp(8)));
+
+        panel.addView(text("也可以到設定頁面調整 LINE Pay、載具、Google 錢包、銀行通知等偵測來源。", 13, MUTED, false));
+
+        new AlertDialog.Builder(this)
+                .setTitle("鈴鐺通知設定")
+                .setView(panel)
+                .setNegativeButton("取消", null)
+                .setPositiveButton("儲存", (d, w) -> {
+                    String raw = time.getText().toString().trim();
+                    if (!raw.matches("^([01]?\\d|2[0-3]):[0-5]\\d$")) {
+                        Toast.makeText(this, "時間格式請輸入 09:00 這種格式", Toast.LENGTH_LONG).show();
+                        return;
+                    }
+                    AppSettings.setString(this, AppSettings.KEY_DAILY_NOTIFY_TIME, raw);
+                    DailyReportScheduler.schedule(this);
+                    Toast.makeText(this, "已更新通知設定", Toast.LENGTH_SHORT).show();
+                })
+                .show();
+    }
+
     private void showSettings() {
         tab = 3;
         applyModeColors();
@@ -753,6 +929,7 @@ public class MainActivity extends Activity {
         LinearLayout startSec = section("上架前必備 / 使用說明");
         startSec.addView(settingButton("第一次開啟的新手說明", "重新看一次 App 使用流程", v -> showOnboarding()));
         startSec.addView(settingButton("通知讀取用途說明", "說明為什麼需要通知讀取權限", v -> showNotificationPurpose()));
+        startSec.addView(settingButton("鈴鐺通知設定", "設定每日摘要、記帳完成通知與提醒時間", v -> showNotificationSettingsDialog()));
         startSec.addView(settingButton("隱私權政策頁面", "本機保存、通知讀取、資料清除與備份說明", v -> showPrivacyPolicy()));
         box.addView(startSec, marginLp(-1, -2, 0, dp(8), 0, dp(10)));
 
@@ -1031,7 +1208,7 @@ public class MainActivity extends Activity {
 
     private void showOnboarding() {
         new AlertDialog.Builder(this)
-                .setTitle("歡迎使用自動記帳 V6")
+                .setTitle("歡迎使用自動記帳 V8")
                 .setMessage("這版新增：\n\n1. 通知自動記帳：LINE Pay、載具、Google 錢包、銀行刷卡通知。\n2. 手動補登：收入支出都能加備註。\n3. 點紀錄先查看，長按才快速修改，避免誤觸。\n4. 防重複：同金額短時間交叉比對，避免一筆記兩次。\n5. 可匯出 CSV、備份、還原、清除資料。\n\n建議先去「設定」看通知讀取用途，再開啟通知讀取權限。")
                 .setPositiveButton("我知道了", (d, w) -> AppSettings.setBool(this, AppSettings.KEY_ONBOARDED, true))
                 .setNeutralButton("通知用途", (d, w) -> showNotificationPurpose())

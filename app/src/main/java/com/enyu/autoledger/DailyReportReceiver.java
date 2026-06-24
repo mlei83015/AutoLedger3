@@ -15,6 +15,10 @@ public class DailyReportReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context context, Intent intent) {
         createChannels(context);
+        if (!AppSettings.getBool(context, AppSettings.KEY_NOTIFY_DAILY, true)) {
+            DailyReportScheduler.schedule(context);
+            return;
+        }
         long yStart = TransactionStore.startOfDay(-1);
         long tStart = TransactionStore.startOfDay(0);
         int expense = TransactionStore.expenseBetween(context, yStart, tStart);
@@ -29,6 +33,7 @@ public class DailyReportReceiver extends BroadcastReceiver {
     }
 
     public static void showInstantSavedNotification(Context context, Transaction tx) {
+        if (!AppSettings.getBool(context, AppSettings.KEY_NOTIFY_AUTO_SAVED, true)) return;
         createChannels(context);
         String dir = "income".equals(tx.direction) ? "收入" : "支出";
         String title = "已自動記帳：" + dir + " $" + tx.amount;
