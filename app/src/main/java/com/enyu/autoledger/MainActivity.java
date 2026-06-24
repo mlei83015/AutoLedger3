@@ -25,8 +25,12 @@ import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Looper;
+import android.os.Handler;
 import android.provider.Settings;
 import android.text.InputType;
+import android.text.TextWatcher;
+import android.text.Editable;
 import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -49,11 +53,13 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.text.SimpleDateFormat;
+import java.text.DecimalFormat;
 import java.util.Date;
 import java.util.List;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Locale;
+import java.util.Map;
 
 public class MainActivity extends Activity {
     public static final String ACTION_QUICK_EXPENSE = "com.enyu.autoledger.action.QUICK_EXPENSE";
@@ -1121,6 +1127,7 @@ public class MainActivity extends Activity {
 
         panel.addView(sideMenuButton("◔", "帳務報表", v -> { closeDialogs(); showStats(); }));
         panel.addView(sideMenuButton("💸", "欠款紀錄", v -> { closeDialogs(); showDebtTracker(); }));
+        panel.addView(sideMenuButton("💱", "匯率換算", v -> { closeDialogs(); showExchangeConverter(); }));
         panel.addView(sideMenuButton("▤", "發票記帳  HOT", v -> showFeatureComing("發票記帳", "之後會接載具發票匯入與中獎提醒。")));
         panel.addView(sideMenuButton("▦", "記帳小工具", v -> showWidgetInfoDialog()));
         panel.addView(sideMenuButton("👥", "共享帳本", v -> showFeatureComing("共享帳本", "未來可做室友、情侶、社團共同帳本。")));
@@ -1163,6 +1170,196 @@ public class MainActivity extends Activity {
         wrap.setOrientation(LinearLayout.VERTICAL);
         wrap.addView(b, lp);
         return wrap;
+    }
+
+
+
+    private interface CurrencyPickCallback {
+        void onPicked(String code);
+    }
+
+    private void showExchangeConverter() {
+        tab = 3;
+        applyModeColors();
+        ScrollView scroll = pageBase();
+        LinearLayout box = pageBox(scroll);
+
+        LinearLayout top = new LinearLayout(this);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        TextView back = text("‹", 32, TEXT, false);
+        back.setGravity(Gravity.CENTER);
+        back.setOnClickListener(v -> showHome());
+        top.addView(back, new LinearLayout.LayoutParams(dp(38), -2));
+        TextView title = text("匯率換算", 22, TEXT, true);
+        title.setGravity(Gravity.CENTER);
+        top.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
+        TextView refresh = text("↻", 25, TEXT, true);
+        refresh.setGravity(Gravity.CENTER);
+        top.addView(refresh, new LinearLayout.LayoutParams(dp(44), -2));
+        box.addView(top, marginLp(-1, -2, 0, 0, 0, dp(12)));
+
+        LinearLayout ratesCard = section("常用幣種參考");
+        ratesCard.addView(text(CurrencyRateStore.updatedText(this) + "｜每天開啟時最多更新一次", 12, MUTED, false), marginLp(-1, -2, 0, 0, 0, dp(8)));
+        String[] codes = CurrencyRateStore.commonCodes();
+        DecimalFormat df = new DecimalFormat("#,##0.###");
+        for (int i = 0; i < codes.length; i += 3) {
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            for (int j = 0; j < 3 && i + j < codes.length; j++) {
+                String code = codes[i + j];
+                String sub;
+                if ("TWD".equals(code)) sub = "基準幣";
+                else sub = "1 " + code + " ≈ NT$" + df.format(CurrencyRateStore.convert(this, 1, code, "TWD"));
+                Button chip = smallChip(code + "\n" + sub, isDarkMode() ? 0xFF202A36 : 0xFFF6FAFF, TEXT);
+                chip.setTextSize(12);
+                chip.setSingleLine(false);
+                chip.setMaxLines(2);
+                row.addView(chip, marginLp(0, dp(58), dp(3), dp(4), dp(3), dp(4), 1));
+            }
+            ratesCard.addView(row);
+        }
+        box.addView(ratesCard, marginLp(-1, -2, 0, 0, 0, dp(12)));
+
+        LinearLayout converter = section("雙向換算");
+        converter.addView(text("上面或下面都可以輸入，另一格會自動換算。匯率是參考值，實際刷卡仍以銀行入帳為準。", 13, MUTED, false), marginLp(-1, -2, 0, 0, 0, dp(10)));
+
+        final String[] from = new String[]{"TWD"};
+        final String[] to = new String[]{"JPY"};
+        final boolean[] updating = new boolean[]{false};
+        final String[] active = new String[]{"from"};
+
+        LinearLayout fromRow = new LinearLayout(this);
+        fromRow.setOrientation(LinearLayout.HORIZONTAL);
+        Button fromBtn = pill(currencyButtonText(from[0]), CHIP, TEXT);
+        EditText fromAmount = edit("輸入金額", false);
+        fromAmount.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        fromAmount.setTextSize(18);
+        fromRow.addView(fromBtn, marginLp(dp(112), dp(56), 0, 0, dp(8), 0));
+        fromRow.addView(fromAmount, new LinearLayout.LayoutParams(0, dp(56), 1));
+        converter.addView(fromRow, marginLp(-1, -2, 0, 0, 0, dp(10)));
+
+        LinearLayout toRow = new LinearLayout(this);
+        toRow.setOrientation(LinearLayout.HORIZONTAL);
+        Button toBtn = pill(currencyButtonText(to[0]), CHIP, TEXT);
+        EditText toAmount = edit("換算結果", false);
+        toAmount.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        toAmount.setTextSize(18);
+        toRow.addView(toBtn, marginLp(dp(112), dp(56), 0, 0, dp(8), 0));
+        toRow.addView(toAmount, new LinearLayout.LayoutParams(0, dp(56), 1));
+        converter.addView(toRow, marginLp(-1, -2, 0, 0, 0, dp(8)));
+
+        LinearLayout actionRow = new LinearLayout(this);
+        actionRow.setOrientation(LinearLayout.HORIZONTAL);
+        Button swap = smallChip("⇅ 對調", CHIP, TEXT);
+        Button update = bigAction("更新今日匯率", 0xFF42C7E8, 0xFF4D8DFF);
+        actionRow.addView(swap, marginLp(0, dp(50), 0, 0, dp(6), 0, 1));
+        actionRow.addView(update, marginLp(0, dp(50), dp(6), 0, 0, 0, 1));
+        converter.addView(actionRow, marginLp(-1, -2, 0, dp(4), 0, dp(2)));
+        box.addView(converter, marginLp(-1, -2, 0, 0, 0, dp(12)));
+
+        TextWatcher fromWatcher = new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) { }
+            @Override public void afterTextChanged(Editable e) {
+                if (updating[0] || !"from".equals(active[0])) return;
+                updateCurrencyAmount(fromAmount, toAmount, from[0], to[0], updating);
+            }
+        };
+        TextWatcher toWatcher = new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) { }
+            @Override public void afterTextChanged(Editable e) {
+                if (updating[0] || !"to".equals(active[0])) return;
+                updateCurrencyAmount(toAmount, fromAmount, to[0], from[0], updating);
+            }
+        };
+        fromAmount.setOnFocusChangeListener((v, has) -> { if (has) active[0] = "from"; });
+        toAmount.setOnFocusChangeListener((v, has) -> { if (has) active[0] = "to"; });
+        fromAmount.addTextChangedListener(fromWatcher);
+        toAmount.addTextChangedListener(toWatcher);
+        fromAmount.setText("1000");
+        updateCurrencyAmount(fromAmount, toAmount, from[0], to[0], updating);
+
+        fromBtn.setOnClickListener(v -> showCurrencyPicker("選擇上方幣種", from[0], code -> {
+            from[0] = code;
+            fromBtn.setText(currencyButtonText(code));
+            if ("from".equals(active[0])) updateCurrencyAmount(fromAmount, toAmount, from[0], to[0], updating);
+            else updateCurrencyAmount(toAmount, fromAmount, to[0], from[0], updating);
+        }));
+        toBtn.setOnClickListener(v -> showCurrencyPicker("選擇下方幣種", to[0], code -> {
+            to[0] = code;
+            toBtn.setText(currencyButtonText(code));
+            if ("from".equals(active[0])) updateCurrencyAmount(fromAmount, toAmount, from[0], to[0], updating);
+            else updateCurrencyAmount(toAmount, fromAmount, to[0], from[0], updating);
+        }));
+        swap.setOnClickListener(v -> {
+            String tmp = from[0]; from[0] = to[0]; to[0] = tmp;
+            fromBtn.setText(currencyButtonText(from[0]));
+            toBtn.setText(currencyButtonText(to[0]));
+            active[0] = "from";
+            updateCurrencyAmount(fromAmount, toAmount, from[0], to[0], updating);
+        });
+        update.setOnClickListener(v -> updateExchangeRateNow(true));
+        refresh.setOnClickListener(v -> updateExchangeRateNow(true));
+
+        setPage(scroll);
+        updateExchangeRateNow(false);
+    }
+
+    private void updateExchangeRateNow(boolean showToast) {
+        CurrencyRateStore.updateDailyIfNeeded(this, updated -> new Handler(Looper.getMainLooper()).post(() -> {
+            if (showToast) Toast.makeText(this, updated ? "已更新今日匯率" : "今日匯率已是最新或使用內建參考", Toast.LENGTH_SHORT).show();
+        }));
+    }
+
+    private String currencyButtonText(String code) {
+        return code + "\n" + CurrencyRateStore.name(code);
+    }
+
+    private double parseCurrencyInput(EditText e) {
+        try {
+            String raw = e.getText().toString().replace(",", "").trim();
+            if (raw.isEmpty()) return 0;
+            return Double.parseDouble(raw);
+        } catch (Exception ignored) { return 0; }
+    }
+
+    private String formatCurrency(double value) {
+        DecimalFormat df = Math.abs(value) >= 1000 ? new DecimalFormat("#,##0.##") : new DecimalFormat("#,##0.###");
+        return df.format(value);
+    }
+
+    private void updateCurrencyAmount(EditText source, EditText target, String from, String to, boolean[] updating) {
+        double value = parseCurrencyInput(source);
+        double result = CurrencyRateStore.convert(this, value, from, to);
+        updating[0] = true;
+        target.setText(formatCurrency(result));
+        target.setSelection(target.getText().length());
+        updating[0] = false;
+    }
+
+    private void showCurrencyPicker(String title, String current, CurrencyPickCallback callback) {
+        final AlertDialog dialog = new AlertDialog.Builder(this).create();
+        LinearLayout panel = dialogPanel(dp(30));
+        panel.addView(text(title, 20, TEXT, true), marginLp(-1, -2, 0, 0, 0, dp(12)));
+        String[] codes = CurrencyRateStore.commonCodes();
+        for (int i = 0; i < codes.length; i += 3) {
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            for (int j = 0; j < 3 && i + j < codes.length; j++) {
+                final String code = codes[i + j];
+                Button b = smallChip((code.equals(current) ? "✓ " : "") + code + "\n" + CurrencyRateStore.name(code), code.equals(current) ? 0xFFE8F7FF : CHIP, TEXT);
+                b.setSingleLine(false);
+                b.setMaxLines(2);
+                b.setOnClickListener(v -> { dialog.dismiss(); callback.onPicked(code); });
+                row.addView(b, marginLp(0, dp(58), dp(3), dp(4), dp(3), dp(4), 1));
+            }
+            panel.addView(row);
+        }
+        Button close = pill("取消", CHIP, TEXT);
+        close.setOnClickListener(v -> dialog.dismiss());
+        panel.addView(close, marginLp(-1, dp(50), 0, dp(12), 0, 0));
+        showCustomDialog(dialog, panel);
     }
 
     private void showFeatureComing(String title, String body) {
@@ -1564,7 +1761,7 @@ public class MainActivity extends Activity {
 
 
     private void showWidgetInfoDialog() {
-        showRoundedInfoDialog("桌面小工具", "V23 有三種桌面小工具：\n\n1. 簡易記帳小工具：顯示餘額、今日花費，點「支出／收入」快速新增。\n\n2. 載具＋記帳小工具：顯示載具條碼、餘額、今日花費、輸入金額入口。\n\n3. 圖片＋載具＋記帳小工具：最上方顯示你裁切好的圖片，中間顯示載具條碼，下方顯示餘額與支出 / 收入。點小工具圖片可回到 App 修改圖片。", "知道了", null, "圖片設定", v -> showWidgetImageSettingsDialog());
+        showRoundedInfoDialog("桌面小工具", "V24 有三種桌面小工具：\n\n1. 簡易記帳小工具：顯示餘額、今日花費，點「支出／收入」快速新增。\n\n2. 載具＋記帳小工具：顯示載具條碼、餘額、今日花費、輸入金額入口。\n\n3. 圖片＋載具＋記帳小工具：最上方顯示你裁切好的圖片，中間顯示載具條碼，下方顯示餘額與支出 / 收入。點小工具圖片可回到 App 修改圖片。", "知道了", null, "圖片設定", v -> showWidgetImageSettingsDialog());
     }
 
 
@@ -1969,7 +2166,7 @@ public class MainActivity extends Activity {
         advanced.addView(featureRow("月底預估花費", "依照目前花費速度推估月底可能花多少"));
         box.addView(advanced);
 
-        TextView version = text("AutoLedger V23", 12, MUTED, false);
+        TextView version = text("AutoLedger V24", 12, MUTED, false);
         version.setGravity(Gravity.CENTER);
         version.setPadding(0, dp(16), 0, dp(10));
         box.addView(version);
@@ -2212,7 +2409,7 @@ public class MainActivity extends Activity {
     }
 
     private void showOnboarding() {
-        showRoundedInfoDialog("歡迎使用自動記帳 V23", "這版新增 / 優化：\n\n1. LINE Pay 通知若有原價、點數折抵、實付金額，會優先用實付金額記帳。\n2. LINE Pay 原價通知與銀行 / Google 錢包實扣通知金額不同時，會自動合併成同一筆。\n3. 紀錄詳情會顯示原價、折抵與實際支出。\n4. 防重複、桌面小工具、CSV、備份、還原都保留。", "我知道了", v -> AppSettings.setBool(this, AppSettings.KEY_ONBOARDED, true), "通知用途", v -> showNotificationPurpose());
+        showRoundedInfoDialog("歡迎使用自動記帳 V24", "這版新增 / 優化：\n\n1. LINE Pay 通知若有原價、點數折抵、實付金額，會優先用實付金額記帳。\n2. LINE Pay 原價通知與銀行 / Google 錢包實扣通知金額不同時，會自動合併成同一筆。\n3. 紀錄詳情會顯示原價、折抵與實際支出。\n4. 防重複、桌面小工具、CSV、備份、還原都保留。", "我知道了", v -> AppSettings.setBool(this, AppSettings.KEY_ONBOARDED, true), "通知用途", v -> showNotificationPurpose());
     }
 
     private void showNotificationPurpose() {

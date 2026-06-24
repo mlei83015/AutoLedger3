@@ -48,7 +48,7 @@ public class CarrierPhotoWidgetProvider extends AppWidgetProvider {
             try { photo = BitmapFactory.decodeFile(path); } catch (Exception ignored) { }
         }
         if (photo != null) {
-            views.setImageViewBitmap(R.id.widget_photo, roundedPhoto(photo, 900, 520));
+            views.setImageViewBitmap(R.id.widget_photo, roundedPhoto(photo, 1200, 900));
             views.setViewVisibility(R.id.widget_photo_hint, View.GONE);
         } else {
             views.setImageViewResource(R.id.widget_photo, R.drawable.widget_photo_placeholder);
