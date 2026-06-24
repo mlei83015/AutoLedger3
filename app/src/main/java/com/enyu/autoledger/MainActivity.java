@@ -1199,17 +1199,17 @@ public class MainActivity extends Activity {
         box.addView(top, marginLp(-1, -2, 0, 0, 0, dp(12)));
 
         LinearLayout ratesCard = section("常用幣種參考");
-        ratesCard.addView(text(CurrencyRateStore.updatedText(this) + "｜每天開啟時最多更新一次", 12, MUTED, false), marginLp(-1, -2, 0, 0, 0, dp(8)));
+        ratesCard.addView(text("以下是台幣 1 元的參考匯率｜" + CurrencyRateStore.updatedText(this), 12, MUTED, false), marginLp(-1, -2, 0, 0, 0, dp(8)));
         String[] codes = CurrencyRateStore.commonCodes();
-        DecimalFormat df = new DecimalFormat("#,##0.###");
+        Map<String, Double> rateMap = CurrencyRateStore.rates(this);
+        DecimalFormat df = new DecimalFormat("#,##0.######");
         for (int i = 0; i < codes.length; i += 3) {
             LinearLayout row = new LinearLayout(this);
             row.setOrientation(LinearLayout.HORIZONTAL);
             for (int j = 0; j < 3 && i + j < codes.length; j++) {
                 String code = codes[i + j];
-                String sub;
-                if ("TWD".equals(code)) sub = "基準幣";
-                else sub = "1 " + code + " ≈ NT$" + df.format(CurrencyRateStore.convert(this, 1, code, "TWD"));
+                double rate = rateMap.containsKey(code) ? rateMap.get(code) : CurrencyRateStore.convert(this, 1, "TWD", code);
+                String sub = "TWD".equals(code) ? "1 台幣" : df.format(rate) + " " + CurrencyRateStore.name(code);
                 Button chip = smallChip(code + "\n" + sub, isDarkMode() ? 0xFF202A36 : 0xFFF6FAFF, TEXT);
                 chip.setTextSize(12);
                 chip.setSingleLine(false);
@@ -1313,7 +1313,7 @@ public class MainActivity extends Activity {
     }
 
     private String currencyButtonText(String code) {
-        return code + "\n" + CurrencyRateStore.name(code);
+        return code + " " + CurrencyRateStore.name(code);
     }
 
     private double parseCurrencyInput(EditText e) {
@@ -1341,24 +1341,37 @@ public class MainActivity extends Activity {
     private void showCurrencyPicker(String title, String current, CurrencyPickCallback callback) {
         final AlertDialog dialog = new AlertDialog.Builder(this).create();
         LinearLayout panel = dialogPanel(dp(30));
-        panel.addView(text(title, 20, TEXT, true), marginLp(-1, -2, 0, 0, 0, dp(12)));
-        String[] codes = CurrencyRateStore.commonCodes();
+        panel.addView(text(title, 21, TEXT, true), marginLp(-1, -2, 0, 0, 0, dp(4)));
+        panel.addView(text("常用幣種在最上面，往下滑可以選更多國家。", 13, MUTED, false), marginLp(-1, -2, 0, 0, 0, dp(10)));
+
+        ScrollView pickerScroll = new ScrollView(this);
+        LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        pickerScroll.addView(list);
+
+        String[] codes = CurrencyRateStore.allCodes();
         for (int i = 0; i < codes.length; i += 3) {
             LinearLayout row = new LinearLayout(this);
             row.setOrientation(LinearLayout.HORIZONTAL);
             for (int j = 0; j < 3 && i + j < codes.length; j++) {
                 final String code = codes[i + j];
-                Button b = smallChip((code.equals(current) ? "✓ " : "") + code + "\n" + CurrencyRateStore.name(code), code.equals(current) ? 0xFFE8F7FF : CHIP, TEXT);
+                boolean selected = code.equals(current);
+                int bg = selected ? (isDarkMode() ? 0xFF2BB8B2 : 0xFF42C7E8) : CHIP;
+                int fg = selected ? 0xFFFFFFFF : TEXT;
+                Button b = smallChip((selected ? "✓ " : "") + code + "\n" + CurrencyRateStore.name(code), bg, fg);
+                b.setTextSize(13);
                 b.setSingleLine(false);
                 b.setMaxLines(2);
                 b.setOnClickListener(v -> { dialog.dismiss(); callback.onPicked(code); });
-                row.addView(b, marginLp(0, dp(58), dp(3), dp(4), dp(3), dp(4), 1));
+                row.addView(b, marginLp(0, dp(60), dp(3), dp(4), dp(3), dp(4), 1));
             }
-            panel.addView(row);
+            list.addView(row);
         }
+        panel.addView(pickerScroll, marginLp(-1, dp(390), 0, 0, 0, dp(12)));
+
         Button close = pill("取消", CHIP, TEXT);
         close.setOnClickListener(v -> dialog.dismiss());
-        panel.addView(close, marginLp(-1, dp(50), 0, dp(12), 0, 0));
+        panel.addView(close, marginLp(-1, dp(50), 0, 0, 0, 0));
         showCustomDialog(dialog, panel);
     }
 
@@ -1761,7 +1774,7 @@ public class MainActivity extends Activity {
 
 
     private void showWidgetInfoDialog() {
-        showRoundedInfoDialog("桌面小工具", "V24 有三種桌面小工具：\n\n1. 簡易記帳小工具：顯示餘額、今日花費，點「支出／收入」快速新增。\n\n2. 載具＋記帳小工具：顯示載具條碼、餘額、今日花費、輸入金額入口。\n\n3. 圖片＋載具＋記帳小工具：最上方顯示你裁切好的圖片，中間顯示載具條碼，下方顯示餘額與支出 / 收入。點小工具圖片可回到 App 修改圖片。", "知道了", null, "圖片設定", v -> showWidgetImageSettingsDialog());
+        showRoundedInfoDialog("桌面小工具", "V25 有三種桌面小工具：\n\n1. 簡易記帳小工具：顯示餘額、今日花費，點「支出／收入」快速新增。\n\n2. 載具＋記帳小工具：顯示載具條碼、餘額、今日花費、輸入金額入口。\n\n3. 圖片＋載具＋記帳小工具：最上方顯示你裁切好的圖片，中間顯示載具條碼，下方顯示餘額與支出 / 收入。點小工具圖片可回到 App 修改圖片。", "知道了", null, "圖片設定", v -> showWidgetImageSettingsDialog());
     }
 
 
@@ -2166,7 +2179,7 @@ public class MainActivity extends Activity {
         advanced.addView(featureRow("月底預估花費", "依照目前花費速度推估月底可能花多少"));
         box.addView(advanced);
 
-        TextView version = text("AutoLedger V24", 12, MUTED, false);
+        TextView version = text("AutoLedger V25", 12, MUTED, false);
         version.setGravity(Gravity.CENTER);
         version.setPadding(0, dp(16), 0, dp(10));
         box.addView(version);
@@ -2409,7 +2422,12 @@ public class MainActivity extends Activity {
     }
 
     private void showOnboarding() {
-        showRoundedInfoDialog("歡迎使用自動記帳 V24", "這版新增 / 優化：\n\n1. LINE Pay 通知若有原價、點數折抵、實付金額，會優先用實付金額記帳。\n2. LINE Pay 原價通知與銀行 / Google 錢包實扣通知金額不同時，會自動合併成同一筆。\n3. 紀錄詳情會顯示原價、折抵與實際支出。\n4. 防重複、桌面小工具、CSV、備份、還原都保留。", "我知道了", v -> AppSettings.setBool(this, AppSettings.KEY_ONBOARDED, true), "通知用途", v -> showNotificationPurpose());
+        showRoundedInfoDialog("歡迎使用自動記帳 V25", "這版新增 / 優化：
+
+1. 匯率換算改成台幣 1 元可換多少外幣，常用幣種更清楚。
+2. 幣種選擇改成可滑動清單，新增更多常見幣別。
+3. 選取幣種的顏色加強，深色模式下更容易看清楚。
+4. LINE Pay 點數折抵、防重複、桌面小工具、CSV、備份、還原都保留。", "我知道了", v -> AppSettings.setBool(this, AppSettings.KEY_ONBOARDED, true), "通知用途", v -> showNotificationPurpose());
     }
 
     private void showNotificationPurpose() {

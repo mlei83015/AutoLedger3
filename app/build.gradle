@@ -10,8 +10,8 @@ android {
         applicationId 'com.enyu.autoledger'
         minSdk 26
         targetSdk 35
-        versionCode 24
-        versionName '1.0.0-v24-photo-lock-exchange'
+        versionCode 25
+        versionName '1.0.0-v25-exchange-ui' 
     }
 
     signingConfigs {
