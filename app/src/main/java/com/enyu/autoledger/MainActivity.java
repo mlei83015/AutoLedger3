@@ -40,6 +40,9 @@ import java.util.Calendar;
 import java.util.Locale;
 
 public class MainActivity extends Activity {
+    public static final String ACTION_QUICK_EXPENSE = "com.enyu.autoledger.action.QUICK_EXPENSE";
+    public static final String ACTION_QUICK_INCOME = "com.enyu.autoledger.action.QUICK_INCOME";
+
     private LinearLayout root;
     private LinearLayout content;
     private LinearLayout nav;
@@ -68,8 +71,26 @@ public class MainActivity extends Activity {
         requestPostNotificationPermissionIfNeeded();
         buildShell();
         showHome();
+        handleLaunchIntent(getIntent());
         if (!AppSettings.getBool(this, AppSettings.KEY_ONBOARDED, false)) {
             root.postDelayed(() -> showOnboarding(), 500);
+        }
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleLaunchIntent(intent);
+    }
+
+    private void handleLaunchIntent(Intent intent) {
+        if (intent == null) return;
+        String action = intent.getAction();
+        if (ACTION_QUICK_EXPENSE.equals(action)) {
+            root.postDelayed(() -> showManual("expense"), 120);
+        } else if (ACTION_QUICK_INCOME.equals(action)) {
+            root.postDelayed(() -> showManual("income"), 120);
         }
     }
 
@@ -428,8 +449,8 @@ public class MainActivity extends Activity {
         Button incomeBtn = pill("↑  收入", startIncome ? PURPLE : CHIP, startIncome ? 0xFFFFFFFF : TEXT);
         expenseBtn.setOnClickListener(v -> showManual("expense"));
         incomeBtn.setOnClickListener(v -> showManual("income"));
-        seg.addView(expenseBtn, new LinearLayout.LayoutParams(0, dp(54), 1));
-        seg.addView(incomeBtn, new LinearLayout.LayoutParams(0, dp(54), 1));
+        seg.addView(expenseBtn, marginLp(0, dp(54), 0, 0, dp(6), 0, 1));
+        seg.addView(incomeBtn, marginLp(0, dp(54), dp(6), 0, 0, 0, 1));
         box.addView(seg, marginLp(-1, -2, 0, dp(14), 0, dp(14)));
 
         final EditText amountInput = edit("金額，例如 120", true);
@@ -643,17 +664,17 @@ public class MainActivity extends Activity {
         LinearLayout typeTabs = new LinearLayout(this);
         typeTabs.setOrientation(LinearLayout.HORIZONTAL);
         typeTabs.setBackground(round(AppSettings.getBool(this, AppSettings.KEY_DARK_MODE, false) ? 0xFF202933 : 0xFFF2F3F5, dp(18), BORDER));
-        typeTabs.addView(reportTab("支出", "expense".equals(reportType), () -> { reportType = "expense"; showStats(); }), new LinearLayout.LayoutParams(0, dp(54), 1));
-        typeTabs.addView(reportTab("收入", "income".equals(reportType), () -> { reportType = "income"; showStats(); }), new LinearLayout.LayoutParams(0, dp(54), 1));
-        typeTabs.addView(reportTab("結餘", "balance".equals(reportType), () -> { reportType = "balance"; showStats(); }), new LinearLayout.LayoutParams(0, dp(54), 1));
+        typeTabs.addView(reportTab("支出", "expense".equals(reportType), () -> { reportType = "expense"; showStats(); }), marginLp(0, dp(54), 0, 0, dp(5), 0, 1));
+        typeTabs.addView(reportTab("收入", "income".equals(reportType), () -> { reportType = "income"; showStats(); }), marginLp(0, dp(54), dp(5), 0, dp(5), 0, 1));
+        typeTabs.addView(reportTab("結餘", "balance".equals(reportType), () -> { reportType = "balance"; showStats(); }), marginLp(0, dp(54), dp(5), 0, 0, 0, 1));
         box.addView(typeTabs, marginLp(-1, -2, 0, 0, 0, dp(12)));
 
         LinearLayout rangeTabs = new LinearLayout(this);
         rangeTabs.setOrientation(LinearLayout.HORIZONTAL);
-        rangeTabs.addView(rangeChip("月", "month".equals(reportRange), () -> { reportRange = "month"; showStats(); }), new LinearLayout.LayoutParams(0, dp(48), 1));
-        rangeTabs.addView(rangeChip("近六個月", "six".equals(reportRange), () -> { reportRange = "six"; showStats(); }), new LinearLayout.LayoutParams(0, dp(48), 1));
-        rangeTabs.addView(rangeChip("年", "year".equals(reportRange), () -> { reportRange = "year"; showStats(); }), new LinearLayout.LayoutParams(0, dp(48), 1));
-        rangeTabs.addView(rangeChip("自訂", "custom".equals(reportRange), () -> { reportRange = "custom"; showStats(); }), new LinearLayout.LayoutParams(0, dp(48), 1));
+        rangeTabs.addView(rangeChip("月", "month".equals(reportRange), () -> { reportRange = "month"; showStats(); }), marginLp(0, dp(48), 0, 0, dp(4), 0, 1));
+        rangeTabs.addView(rangeChip("近六個月", "six".equals(reportRange), () -> { reportRange = "six"; showStats(); }), marginLp(0, dp(48), dp(4), 0, dp(4), 0, 1));
+        rangeTabs.addView(rangeChip("年", "year".equals(reportRange), () -> { reportRange = "year"; showStats(); }), marginLp(0, dp(48), dp(4), 0, dp(4), 0, 1));
+        rangeTabs.addView(rangeChip("自訂", "custom".equals(reportRange), () -> { reportRange = "custom"; showStats(); }), marginLp(0, dp(48), dp(4), 0, 0, 0, 1));
         box.addView(rangeTabs, marginLp(-1, -2, 0, 0, 0, dp(12)));
 
         LinearLayout monthRow = new LinearLayout(this);
@@ -805,6 +826,15 @@ public class MainActivity extends Activity {
         panel.setPadding(dp(20), dp(18), dp(20), dp(18));
         panel.setBackground(round(AppSettings.getBool(this, AppSettings.KEY_DARK_MODE, false) ? 0xFF1E242D : 0xFFFFFFFF, dp(20), BORDER));
 
+        LinearLayout closeRow = new LinearLayout(this);
+        closeRow.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        TextView close = text("✕", 22, MUTED, true);
+        close.setGravity(Gravity.CENTER);
+        close.setBackground(round(AppSettings.getBool(this, AppSettings.KEY_DARK_MODE, false) ? 0xFF2A333F : 0xFFF2F2F2, dp(18), BORDER));
+        close.setOnClickListener(v -> closeDialogs());
+        closeRow.addView(close, new LinearLayout.LayoutParams(dp(42), dp(42)));
+        panel.addView(closeRow, marginLp(-1, -2, 0, 0, 0, dp(4)));
+
         LinearLayout profile = new LinearLayout(this);
         profile.setGravity(Gravity.CENTER_VERTICAL);
         TextView avatar = text("●", 48, AppSettings.getBool(this, AppSettings.KEY_DARK_MODE, false) ? 0xFFFFFFFF : 0xFF222222, true);
@@ -831,7 +861,7 @@ public class MainActivity extends Activity {
 
         panel.addView(sideMenuButton("◔", "帳務報表", v -> { closeDialogs(); showStats(); }));
         panel.addView(sideMenuButton("▤", "發票記帳  HOT", v -> showFeatureComing("發票記帳", "之後會接載具發票匯入與中獎提醒。")));
-        panel.addView(sideMenuButton("▦", "記帳小工具", v -> showFeatureComing("記帳小工具", "可以放快速記帳、今日花費、預算提醒。")));
+        panel.addView(sideMenuButton("▦", "記帳小工具", v -> showFeatureComing("記帳小工具", "已加入桌面小工具：可以在桌面看餘額，點「支出／收入」快速新增。Android 小工具本身不能直接輸入文字，所以會開快速新增小視窗。")));
         panel.addView(sideMenuButton("👥", "共享帳本", v -> showFeatureComing("共享帳本", "未來可做室友、情侶、社團共同帳本。")));
         panel.addView(sideMenuButton("▦", "分類管理", v -> showSettings()));
         panel.addView(sideMenuButton("🏷", "固定收支", v -> showFeatureComing("固定收支", "之後可新增每月房租、訂閱、薪水自動產生紀錄。")));
@@ -1181,6 +1211,12 @@ public class MainActivity extends Activity {
         GradientDrawable gd = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, new int[]{c1, c2});
         gd.setCornerRadius(radius);
         return gd;
+    }
+
+    private LinearLayout.LayoutParams marginLp(int w, int h, int l, int t, int r, int b, float weight) {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(w, h, weight);
+        lp.setMargins(l, t, r, b);
+        return lp;
     }
 
     private LinearLayout.LayoutParams marginLp(int w, int h, int l, int t, int r, int b) {

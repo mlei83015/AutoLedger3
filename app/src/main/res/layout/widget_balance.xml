@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="14dp"
+    android:background="@drawable/widget_bg">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="自動記帳"
+        android:textColor="#0E4F6A"
+        android:textSize="14sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/widget_balance"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="$0"
+        android:textColor="#063B52"
+        android:textSize="28sp"
+        android:textStyle="bold"
+        android:layout_marginTop="2dp" />
+
+    <TextView
+        android:id="@+id/widget_subtitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="今日花費 $0"
+        android:textColor="#557687"
+        android:textSize="12sp"
+        android:singleLine="true"
+        android:ellipsize="end" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="horizontal"
+        android:gravity="bottom"
+        android:layout_marginTop="8dp">
+
+        <TextView
+            android:id="@+id/widget_expense"
+            android:layout_width="0dp"
+            android:layout_height="44dp"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="＋支出"
+            android:textColor="#FFFFFF"
+            android:textStyle="bold"
+            android:textSize="15sp"
+            android:background="@drawable/widget_button_expense" />
+
+        <TextView
+            android:id="@+id/widget_income"
+            android:layout_width="0dp"
+            android:layout_height="44dp"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:gravity="center"
+            android:text="＋收入"
+            android:textColor="#FFFFFF"
+            android:textStyle="bold"
+            android:textSize="15sp"
+            android:background="@drawable/widget_button_income" />
+    </LinearLayout>
+</LinearLayout>

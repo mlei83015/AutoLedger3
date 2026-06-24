@@ -199,6 +199,7 @@ public class TransactionStore {
                 .edit()
                 .putString(KEY_TRANSACTIONS, arr.toString())
                 .apply();
+        try { BalanceWidgetProvider.updateAll(context); } catch (Exception ignored) { }
     }
 
     public static synchronized boolean update(Context context, String originalHash, long originalTime, Transaction edited) {
@@ -248,6 +249,7 @@ public class TransactionStore {
                 .remove(KEY_TRANSACTIONS)
                 .remove(KEY_SEEN)
                 .apply();
+        try { BalanceWidgetProvider.updateAll(context); } catch (Exception ignored) { }
         log(context, "已清除全部記帳資料");
     }
 
