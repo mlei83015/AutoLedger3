@@ -1,0 +1,25 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.enyu.autoledger'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.enyu.autoledger'
+        minSdk 26
+        targetSdk 35
+        versionCode 27
+        versionName '1.0.0-v27-balance-budget-link' 
+    }
+
+    signingConfigs {
+        debug {
+            storeFile file('autoledger-debug.keystore')
+            storePassword 'android'
+            keyAlias 'autoledgerdebug'
+            keyPassword 'android'
+        }
+    }
+}
