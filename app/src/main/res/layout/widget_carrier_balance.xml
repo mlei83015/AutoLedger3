@@ -16,7 +16,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="載具條碼"
+            android:text="載具＋自動記帳"
             android:textColor="#083E57"
             android:textSize="14sp"
             android:textStyle="bold" />

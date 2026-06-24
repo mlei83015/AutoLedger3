@@ -62,6 +62,8 @@ public class MainActivity extends Activity {
     private final int TEAL = 0xFF16A7B7;
     private final int PURPLE = 0xFF6D5DF6;
     private final int GREEN = 0xFF19A75F;
+    private final int EXPENSE_RED = 0xFFFF4F5E;
+    private final int SOFT_BLUE = 0xFF66C7E8;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -319,7 +321,7 @@ public class MainActivity extends Activity {
         int todayExpense = TransactionStore.expenseBetween(this, TransactionStore.startOfDay(0), TransactionStore.startOfDay(1));
         TextView todayLine = text("今天總共花了  " + TransactionStore.money(todayExpense), 18, TEXT, true);
         todayLine.setGravity(Gravity.CENTER);
-        todayLine.setTextColor(todayExpense > 0 ? CORAL : MUTED);
+        todayLine.setTextColor(todayExpense > 0 ? EXPENSE_RED : MUTED);
         box.addView(todayLine, marginLp(-1, -2, 0, 0, 0, dp(10)));
 
         LinearLayout studentTip = card();
@@ -330,7 +332,19 @@ public class MainActivity extends Activity {
         studentTip.addView(text("✨ 本月小提醒", 15, TEXT, true));
         String tipHome = forecastHome > budgetForMonth ? "照現在速度月底可能超過預算，今天可以先少喝一杯飲料。" : (savingHome > 0 ? "照現在速度月底可能有剩，可以先存 " + TransactionStore.money(savingHome) + "。" : "目前花費接近預算，先維持節奏。") ;
         studentTip.addView(text(tipHome, 13, MUTED, false));
-        box.addView(studentTip, marginLp(-1, -2, 0, 0, 0, dp(12)));
+        box.addView(studentTip, marginLp(-1, -2, 0, 0, 0, dp(10)));
+
+        LinearLayout monthCountCard = new LinearLayout(this);
+        monthCountCard.setOrientation(LinearLayout.HORIZONTAL);
+        monthCountCard.setGravity(Gravity.CENTER_VERTICAL);
+        monthCountCard.setPadding(dp(14), dp(10), dp(14), dp(10));
+        monthCountCard.setBackground(round(AppSettings.getBool(this, AppSettings.KEY_DARK_MODE, false) ? 0xFF151F2A : 0xFFFFFFFF, dp(16), BORDER));
+        int monthTotalCount = TransactionStore.countBetween(this, TransactionStore.startOfMonth(0), TransactionStore.startOfMonth(1));
+        int monthAutoCount = TransactionStore.autoCountBetween(this, TransactionStore.startOfMonth(0), TransactionStore.startOfMonth(1));
+        int monthManualCount = TransactionStore.manualCountBetween(this, TransactionStore.startOfMonth(0), TransactionStore.startOfMonth(1));
+        monthCountCard.addView(text("本月記錄 " + monthTotalCount + " 筆", 14, TEXT, true), new LinearLayout.LayoutParams(0, -2, 1));
+        monthCountCard.addView(text("自動 " + monthAutoCount + "｜手動 " + monthManualCount, 13, MUTED, false));
+        box.addView(monthCountCard, marginLp(-1, -2, 0, 0, 0, dp(12)));
 
         LinearLayout quick = new LinearLayout(this);
         quick.setOrientation(LinearLayout.HORIZONTAL);
@@ -350,7 +364,7 @@ public class MainActivity extends Activity {
         TextView clear = text("清除資料", 13, MUTED, false);
         clear.setOnClickListener(v -> confirmClear());
         recordHeader.addView(clear);
-        TextView hintEdit = text("  點紀錄可查看 / 長按可修改", 12, MUTED, false);
+        TextView hintEdit = text("  點一下看詳情｜長按修改", 12, MUTED, false);
         recordHeader.addView(hintEdit);
         box.addView(recordHeader, marginLp(-1, -2, 0, 0, 0, dp(6)));
 
@@ -383,33 +397,97 @@ public class MainActivity extends Activity {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(14), dp(10), dp(14), dp(10));
-        String icon = "income".equals(tx.direction) ? "💰" : iconFor(tx.category);
-        TextView ic = text(icon, 22, TEXT, false);
+        row.setPadding(dp(14), dp(11), dp(14), dp(11));
+        row.setMinimumHeight(dp(72));
+
+        boolean income = "income".equals(tx.direction);
+        int iconBg = income ? 0xFFEAF8F0 : (isInvoiceRecord(tx) ? 0xFFEAF8FF : 0xFFFFF0F1);
+        TextView ic = text(income ? "💰" : iconFor(tx.category), 22, TEXT, false);
         ic.setGravity(Gravity.CENTER);
-        ic.setBackground(round(0xFFF4F6FA, dp(16)));
-        row.addView(ic, new LinearLayout.LayoutParams(dp(42), dp(42)));
+        ic.setBackground(round(iconBg, dp(16)));
+        row.addView(ic, new LinearLayout.LayoutParams(dp(48), dp(48)));
 
         LinearLayout mid = new LinearLayout(this);
         mid.setOrientation(LinearLayout.VERTICAL);
-        mid.setPadding(dp(10), 0, dp(8), 0);
-        String main = empty(tx.merchant) ? tx.category : tx.merchant;
-        String note = empty(tx.raw) ? tx.category : tx.raw;
-        if (note.length() > 24) note = note.substring(0, 24) + "…";
-        mid.addView(text(main, 15, TEXT, true));
-        mid.addView(text(tx.category + "・" + note, 12, MUTED, false));
+        mid.setPadding(dp(12), 0, dp(8), 0);
+        TextView title = text(recordTitle(tx), 16, TEXT, true);
+        title.setSingleLine(true);
+        title.setEllipsize(TextUtils.TruncateAt.END);
+        TextView sub = text(recordSubtitle(tx), 12, MUTED, false);
+        sub.setSingleLine(true);
+        sub.setEllipsize(TextUtils.TruncateAt.END);
+        mid.addView(title);
+        mid.addView(sub, marginLp(-1, -2, 0, dp(3), 0, 0));
         row.addView(mid, new LinearLayout.LayoutParams(0, -2, 1));
 
         LinearLayout right = new LinearLayout(this);
         right.setOrientation(LinearLayout.VERTICAL);
-        right.setGravity(Gravity.RIGHT);
-        boolean income = "income".equals(tx.direction);
-        right.addView(text((income ? "+ " : "- ") + TransactionStore.money(tx.amount), 15, income ? GREEN : TEXT, true));
-        right.addView(text(TransactionStore.formatTime(tx.timeMillis), 11, MUTED, false));
-        row.addView(right, new LinearLayout.LayoutParams(-2, -2));
+        right.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        TextView amt = text((income ? "+ " : "- ") + TransactionStore.money(tx.amount), 17, income ? GREEN : EXPENSE_RED, true);
+        amt.setGravity(Gravity.RIGHT);
+        TextView tm = text(TransactionStore.formatTime(tx.timeMillis), 12, MUTED, false);
+        tm.setGravity(Gravity.RIGHT);
+        right.addView(amt);
+        right.addView(tm, marginLp(-1, -2, 0, dp(2), 0, 0));
+        row.addView(right, new LinearLayout.LayoutParams(dp(104), -2));
+
         row.setOnClickListener(v -> showTransactionDetail(tx));
         row.setOnLongClickListener(v -> { showEditTransactionDialog(tx); return true; });
         return row;
+    }
+
+    private String recordTitle(Transaction tx) {
+        if (tx == null) return "記帳紀錄";
+        String source = compactForUi(tx.source + " " + tx.merchant + " " + tx.raw);
+        String merchant = tx.merchant == null ? "" : tx.merchant.trim();
+        if (source.contains("發票") || source.contains("載具")) return "發票載具";
+        if (source.toLowerCase(Locale.ROOT).contains("line") || source.contains("LINE錢包")) return "LINE錢包";
+        if (source.toLowerCase(Locale.ROOT).contains("google") || source.contains("Google錢包")) return "Google 錢包";
+        if (source.contains("銀行") || source.contains("信用卡") || source.contains("刷卡")) return "銀行刷卡";
+        if (!merchant.isEmpty()) return trimUi(merchant, 12);
+        if (tx.category != null && !tx.category.trim().isEmpty()) return trimUi(tx.category, 12);
+        return "記帳紀錄";
+    }
+
+    private String recordSubtitle(Transaction tx) {
+        if (tx == null) return "";
+        String type = (tx.category == null || tx.category.trim().isEmpty()) ? "未分類" : tx.category.trim();
+        String source = sourceDisplay(tx);
+        String note = compactForUi(tx.raw);
+        if (note.length() > 0) {
+            note = note.replace(recordTitle(tx), "").replace(source, "").trim();
+        }
+        note = trimUi(note, 18);
+        if (note.isEmpty()) return type + "・" + source;
+        return type + "・" + source + "・" + note;
+    }
+
+    private String sourceDisplay(Transaction tx) {
+        String all = compactForUi(tx.source + " " + tx.merchant + " " + tx.raw).toLowerCase(Locale.ROOT);
+        if (all.contains("發票") || all.contains("載具") || all.contains("invoice")) return "載具自動記帳";
+        if (all.contains("line") && (all.contains("pay") || all.contains("錢包"))) return "LINE Pay";
+        if (all.contains("google") || all.contains("wallet")) return "Google 錢包";
+        if (all.contains("銀行") || all.contains("刷卡") || all.contains("信用卡")) return "銀行通知";
+        if (tx.hash != null && tx.hash.startsWith("manual-")) return "手動新增";
+        if (tx.source != null && !tx.source.trim().isEmpty()) return trimUi(tx.source.trim(), 10);
+        return "自動記帳";
+    }
+
+    private boolean isInvoiceRecord(Transaction tx) {
+        String s = compactForUi(tx == null ? "" : (tx.source + " " + tx.merchant + " " + tx.raw));
+        return s.contains("發票") || s.contains("載具");
+    }
+
+    private String compactForUi(String s) {
+        if (s == null) return "";
+        return s.replace('\n', ' ').replace('\r', ' ').replaceAll("\\s+", " ").trim();
+    }
+
+    private String trimUi(String s, int max) {
+        if (s == null) return "";
+        String x = compactForUi(s);
+        if (x.length() <= max) return x;
+        return x.substring(0, Math.max(0, max)) + "…";
     }
 
     private String iconFor(String cat) {
@@ -708,13 +786,13 @@ public class MainActivity extends Activity {
             mainValue = Math.max(0, balance);
             int reference = Math.max(1, Math.max(income, expense));
             remainValue = Math.max(0, reference - mainValue);
-            mainColor = balance >= 0 ? GREEN : CORAL;
+            mainColor = balance >= 0 ? GREEN : EXPENSE_RED;
             centerLabel = balance >= 0 ? "結餘" : "赤字";
             mainTitle = "總結餘";
         } else {
             mainValue = expense;
             remainValue = Math.max(0, budget - expense);
-            mainColor = CORAL;
+            mainColor = EXPENSE_RED;
             centerLabel = "支出";
             mainTitle = "總支出";
         }
@@ -738,7 +816,7 @@ public class MainActivity extends Activity {
         LinearLayout summary = card();
         summary.addView(text(reportRangeLabel() + "摘要", 18, TEXT, true));
         summary.addView(text("支出：" + TransactionStore.money(expense) + "　收入：" + TransactionStore.money(income), 15, TEXT, false));
-        summary.addView(text("結餘：" + TransactionStore.money(balance), 15, balance >= 0 ? GREEN : CORAL, true));
+        summary.addView(text("結餘：" + TransactionStore.money(balance), 15, balance >= 0 ? GREEN : EXPENSE_RED, true));
         if ("month".equals(reportRange)) {
             summary.addView(text("月底預估花費：" + TransactionStore.money(TransactionStore.forecastMonthExpense(this)), 14, MUTED, false));
         } else if ("custom".equals(reportRange)) {
@@ -750,7 +828,7 @@ public class MainActivity extends Activity {
         tools.addView(text("報表工具", 18, TEXT, true));
         LinearLayout toolRow = new LinearLayout(this);
         toolRow.setOrientation(LinearLayout.HORIZONTAL);
-        Button csv = smallChip("匯出 CSV", 0xFFFFF0EA, ORANGE);
+        Button csv = smallChip("匯出 CSV", 0xFFFFECEC, EXPENSE_RED);
         csv.setOnClickListener(v -> shareCsv());
         Button scan = smallChip("掃描重複", CHIP, TEXT);
         scan.setOnClickListener(v -> {
@@ -962,7 +1040,7 @@ public class MainActivity extends Activity {
     private void showWidgetInfoDialog() {
         new AlertDialog.Builder(this)
                 .setTitle("桌面小工具")
-                .setMessage("V11 有兩種桌面小工具：\n\n1. 簡易記帳小工具：顯示餘額、今日花費，點「支出／收入」快速新增。\n\n2. 載具＋記帳小工具：上方只顯示一個載具條碼，點條碼可以複製載具號碼，下方顯示餘額與快速新增。\n\nAndroid 桌面小工具不能直接放真正的打字輸入框，所以小工具上的「點我輸入金額」會打開一個很小的快速新增視窗，不會進到完整 App。")
+                .setMessage("V12 有兩種桌面小工具：\n\n1. 簡易記帳小工具：顯示餘額、今日花費，點「支出／收入」快速新增。\n\n2. 載具＋記帳小工具：上方只顯示一個載具條碼，點條碼可以複製載具號碼，下方顯示餘額與快速新增。\n\nAndroid 桌面小工具不能直接放真正的打字輸入框，所以小工具上的「點我輸入金額」會打開一個很小的快速新增視窗，不會進到完整 App。")
                 .setPositiveButton("知道了", null)
                 .setNeutralButton("設定載具", (d, w) -> showCarrierBarcodeDialog())
                 .show();

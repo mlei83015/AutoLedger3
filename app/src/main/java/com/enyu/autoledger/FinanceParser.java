@@ -22,6 +22,10 @@ public class FinanceParser {
         if (direction == null) return null;
 
         String merchant = detectMerchant(normalized, title, appName);
+        String lowerAll = (normalized + " " + appName + " " + packageName).toLowerCase(Locale.ROOT);
+        if (lowerAll.contains("載具") || lowerAll.contains("發票") || lowerAll.contains("invoice") || lowerAll.contains("einvoice")) merchant = "發票載具";
+        else if (lowerAll.contains("line") && (lowerAll.contains("pay") || lowerAll.contains("錢包"))) merchant = "LINE錢包";
+        else if (lowerAll.contains("google") || lowerAll.contains("walletnfcrel")) merchant = "Google 錢包";
         String category = detectCategory(normalized, merchant, direction);
         String source = appName == null || appName.isEmpty() ? packageName : appName;
         String hash = sha256(packageName + "|" + title + "|" + text + "|" + amount + "|" + (timeMillis / 60000));

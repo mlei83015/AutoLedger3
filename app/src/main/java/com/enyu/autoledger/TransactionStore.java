@@ -98,6 +98,14 @@ public class TransactionStore {
 
             boolean invoicePair = ("invoice".equals(oldType) && isPaymentSignal(newType)) || ("invoice".equals(newType) && isPaymentSignal(oldType));
             boolean walletBankPair = isWalletOrBank(oldType) && isWalletOrBank(newType) && crossSource;
+            boolean strongKnownCrossSource = isPaymentSignal(oldType) && isPaymentSignal(newType) && crossSource && sameDay(old.timeMillis, tx.timeMillis);
+
+            if (strongKnownCrossSource && diff <= 24L * 60L * 60L * 1000L) {
+                // V12：同一天、同金額，且來源是 LINE Pay / 載具 / Google 錢包 / 銀行刷卡等付款訊號時，優先視為同一筆。
+                // 這是為了避免 LINE Pay 先跳、銀行或載具晚一點又跳，造成一筆消費記兩次。
+                logDuplicate(context, old, tx, "V12 同日同金額跨來源付款通知，判定同一筆");
+                return true;
+            }
 
             if (invoicePair && diff <= invoiceWindow && (sameDay(old.timeMillis, tx.timeMillis) || sameMerchant || diff <= walletBankWindow)) {
                 logDuplicate(context, old, tx, "載具與付款通知同金額，判定同一筆");
@@ -274,6 +282,30 @@ public class TransactionStore {
         if (removed > 0) saveAll(context, kept);
         log(context, "自動除錯完成｜移除疑似重複 " + removed + " 筆");
         return removed;
+    }
+
+    public static int countBetween(Context context, long start, long end) {
+        int count = 0;
+        for (Transaction t : getAll(context)) {
+            if (t.timeMillis >= start && t.timeMillis < end) count++;
+        }
+        return count;
+    }
+
+    public static int autoCountBetween(Context context, long start, long end) {
+        int count = 0;
+        for (Transaction t : getAll(context)) {
+            if (t.timeMillis >= start && t.timeMillis < end && (t.hash == null || !t.hash.startsWith("manual-"))) count++;
+        }
+        return count;
+    }
+
+    public static int manualCountBetween(Context context, long start, long end) {
+        int count = 0;
+        for (Transaction t : getAll(context)) {
+            if (t.timeMillis >= start && t.timeMillis < end && t.hash != null && t.hash.startsWith("manual-")) count++;
+        }
+        return count;
     }
 
     public static int expenseBetween(Context context, long start, long end) {

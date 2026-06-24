@@ -10,8 +10,8 @@ android {
         applicationId 'com.enyu.autoledger'
         minSdk 26
         targetSdk 35
-        versionCode 12
-        versionName '1.0.0-v11-fix'
+        versionCode 13
+        versionName '1.0.0-v12-stable'
     }
 
     signingConfigs {
