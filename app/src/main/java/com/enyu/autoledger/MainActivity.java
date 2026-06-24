@@ -225,29 +225,38 @@ public class MainActivity extends Activity {
     }
 
     private void showBudgetDialog() {
-        final EditText input = new EditText(this);
+        final AlertDialog dialog = new AlertDialog.Builder(this).create();
+        LinearLayout panel = dialogPanel(dp(28));
+        panel.addView(text("設定本月可花預算", 21, TEXT, true), marginLp(-1, -2, 0, 0, 0, dp(8)));
+        panel.addView(text("這只會影響圓形圖的本月可花額度；收入會加到最上面的全部餘額，不會把圓形圖預算變大。", 14, TEXT, false), marginLp(-1, -2, 0, 0, 0, dp(12)));
+        final EditText input = edit("例如：10000", true);
         input.setInputType(InputType.TYPE_CLASS_NUMBER);
-        input.setHint("例如：10000");
         input.setText(String.valueOf(AppSettings.getMonthlyBudget(this)));
         input.setSelectAllOnFocus(true);
-        input.setPadding(dp(16), dp(8), dp(16), dp(8));
-        new AlertDialog.Builder(this)
-                .setTitle("設定本月可花預算")
-                .setMessage("這只會影響圓形圖的本月可花額度；收入會加到最上面的全部餘額，不會把圓形圖預算變大。")
-                .setView(input)
-                .setPositiveButton("儲存", (dialog, which) -> {
-                    int amount = 0;
-                    try { amount = Integer.parseInt(input.getText().toString().replace(",", "").trim()); } catch (Exception ignored) { }
-                    if (amount <= 0) {
-                        Toast.makeText(this, "預算要大於 0", Toast.LENGTH_SHORT).show();
-                        return;
-                    }
-                    AppSettings.setMonthlyBudget(this, amount);
-                    Toast.makeText(this, "已設定本月預算 " + TransactionStore.money(amount), Toast.LENGTH_SHORT).show();
-                    refreshCurrent();
-                })
-                .setNegativeButton("取消", null)
-                .show();
+        input.setTextSize(18);
+        panel.addView(input, marginLp(-1, dp(56), 0, 0, 0, dp(14)));
+
+        LinearLayout actions = dialogActionsRow();
+        Button cancel = pill("取消", CHIP, TEXT);
+        Button save = bigSave("儲存");
+        actions.addView(cancel, marginLp(0, dp(50), 0, 0, dp(6), 0, 1));
+        actions.addView(save, marginLp(0, dp(50), dp(6), 0, 0, 0, 1));
+        panel.addView(actions);
+
+        cancel.setOnClickListener(v -> dialog.dismiss());
+        save.setOnClickListener(v -> {
+            int amount = 0;
+            try { amount = Integer.parseInt(input.getText().toString().replace(",", "").trim()); } catch (Exception ignored) { }
+            if (amount <= 0) {
+                Toast.makeText(this, "預算要大於 0", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            AppSettings.setMonthlyBudget(this, amount);
+            Toast.makeText(this, "已設定本月預算 " + TransactionStore.money(amount), Toast.LENGTH_SHORT).show();
+            dialog.dismiss();
+            refreshCurrent();
+        });
+        showCustomDialog(dialog, panel);
     }
 
     private void showHome() {
@@ -1087,7 +1096,7 @@ public class MainActivity extends Activity {
 
 
     private void showWidgetInfoDialog() {
-        showRoundedInfoDialog("桌面小工具", "V16 有兩種桌面小工具：\n\n1. 簡易記帳小工具：顯示餘額、今日花費，點「支出／收入」快速新增。\n\n2. 載具＋記帳小工具：上方只顯示一個載具條碼，點條碼可以複製載具號碼，下方顯示餘額與快速新增。\n\nAndroid 桌面小工具不能直接放真正的打字輸入框，所以小工具上的「點我輸入金額」會打開一個很小的快速新增視窗。", "知道了", null, "設定載具", v -> showCarrierBarcodeDialog());
+        showRoundedInfoDialog("桌面小工具", "V17 有兩種桌面小工具：\n\n1. 簡易記帳小工具：顯示餘額、今日花費，點「支出／收入」快速新增。\n\n2. 載具＋記帳小工具：上方只顯示一個載具條碼，點條碼可以複製載具號碼，下方顯示餘額與快速新增。\n\nAndroid 桌面小工具不能直接放真正的打字輸入框，所以小工具上的「點我輸入金額」會打開一個很小的快速新增視窗。", "知道了", null, "設定載具", v -> showCarrierBarcodeDialog());
     }
 
 
@@ -1250,7 +1259,7 @@ public class MainActivity extends Activity {
         advanced.addView(featureRow("月底預估花費", "依照目前花費速度推估月底可能花多少"));
         box.addView(advanced);
 
-        TextView version = text("AutoLedger V16｜分類標題・圖標選擇・圓角主題優化版", 12, MUTED, false);
+        TextView version = text("AutoLedger V17", 12, MUTED, false);
         version.setGravity(Gravity.CENTER);
         version.setPadding(0, dp(16), 0, dp(10));
         box.addView(version);
@@ -1431,6 +1440,30 @@ public class MainActivity extends Activity {
         return gd;
     }
 
+    private LinearLayout dialogPanel(int radius) {
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(20), dp(18), dp(20), dp(16));
+        panel.setBackground(round(CARD, radius, BORDER));
+        return panel;
+    }
+
+    private LinearLayout dialogActionsRow() {
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        return actions;
+    }
+
+    private void showCustomDialog(AlertDialog dialog, View panel) {
+        dialog.setView(panel);
+        dialog.setOnShowListener(d -> {
+            try {
+                if (dialog.getWindow() != null) dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+            } catch (Exception ignored) { }
+        });
+        dialog.show();
+    }
+
     private LinearLayout.LayoutParams marginLp(int w, int h, int l, int t, int r, int b, float weight) {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(w, h, weight);
         lp.setMargins(l, t, r, b);
@@ -1461,7 +1494,7 @@ public class MainActivity extends Activity {
     }
 
     private void showOnboarding() {
-        showRoundedInfoDialog("歡迎使用自動記帳 V16", "這版新增 / 優化：\n\n1. 記錄標題改用分類名稱，分類改成茶飲，列表就顯示茶飲。\n2. 修改紀錄可以選圖標，圖標會跟著分類顯示。\n3. 自動通知先保留原始內容，不強制用 LINE 錢包或發票載具當標題。\n4. 介面與彈窗改成更圓弧，並依深色 / 淺色模式調整顏色。\n5. 防重複、CSV、備份、還原、清除資料都保留。", "我知道了", v -> AppSettings.setBool(this, AppSettings.KEY_ONBOARDED, true), "通知用途", v -> showNotificationPurpose());
+        showRoundedInfoDialog("歡迎使用自動記帳 V17", "這版新增 / 優化：\n\n1. 記錄標題改用分類名稱，分類改成茶飲，列表就顯示茶飲。\n2. 修改紀錄可以選圖標，圖標會跟著分類顯示。\n3. 自動通知先保留原始內容，不強制用 LINE 錢包或發票載具當標題。\n4. 介面與彈窗改成更圓弧，並依深色 / 淺色模式調整顏色。\n5. 防重複、CSV、備份、還原、清除資料都保留。", "我知道了", v -> AppSettings.setBool(this, AppSettings.KEY_ONBOARDED, true), "通知用途", v -> showNotificationPurpose());
     }
 
 
@@ -1496,22 +1529,33 @@ public class MainActivity extends Activity {
     }
 
     private void showRestoreDialog() {
-        final EditText input = new EditText(this);
-        input.setHint("貼上備份 JSON 資料");
-        input.setMinLines(6);
+        final AlertDialog dialog = new AlertDialog.Builder(this).create();
+        LinearLayout panel = dialogPanel(dp(28));
+        panel.addView(text("還原資料", 21, TEXT, true), marginLp(-1, -2, 0, 0, 0, dp(8)));
+        panel.addView(text("貼上之前備份的 JSON。還原會覆蓋目前記帳資料，建議先備份再還原。", 14, TEXT, false), marginLp(-1, -2, 0, 0, 0, dp(14)));
+        final EditText input = edit("貼上備份 JSON 資料", false);
+        input.setMinLines(7);
+        input.setSingleLine(false);
+        input.setGravity(Gravity.TOP | Gravity.LEFT);
         input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
-        input.setPadding(dp(12), dp(8), dp(12), dp(8));
-        new AlertDialog.Builder(this)
-                .setTitle("還原資料")
-                .setMessage("貼上之前備份的 JSON。還原會覆蓋目前記帳資料，建議先備份再還原。")
-                .setView(input)
-                .setNegativeButton("取消", null)
-                .setPositiveButton("還原", (d, w) -> {
-                    boolean ok = TransactionStore.importJson(this, input.getText().toString());
-                    Toast.makeText(this, ok ? "已還原資料" : "還原失敗，格式不正確", Toast.LENGTH_LONG).show();
-                    refreshCurrent();
-                })
-                .show();
+        input.setPadding(dp(16), dp(14), dp(16), dp(14));
+        panel.addView(input, marginLp(-1, dp(180), 0, 0, 0, dp(14)));
+
+        LinearLayout actions = dialogActionsRow();
+        Button cancel = pill("取消", CHIP, TEXT);
+        Button restore = bigSave("還原");
+        actions.addView(cancel, marginLp(0, dp(50), 0, 0, dp(6), 0, 1));
+        actions.addView(restore, marginLp(0, dp(50), dp(6), 0, 0, 0, 1));
+        panel.addView(actions);
+
+        cancel.setOnClickListener(v -> dialog.dismiss());
+        restore.setOnClickListener(v -> {
+            boolean ok = TransactionStore.importJson(this, input.getText().toString());
+            Toast.makeText(this, ok ? "已還原資料" : "還原失敗，格式不正確", Toast.LENGTH_LONG).show();
+            dialog.dismiss();
+            refreshCurrent();
+        });
+        showCustomDialog(dialog, panel);
     }
 
     private void showManageListDialog(String title, String key, List<String> items, String hint) {
@@ -1545,17 +1589,39 @@ public class MainActivity extends Activity {
     }
 
     private void showDebugDialog() {
-        new AlertDialog.Builder(this)
-                .setTitle("錯誤回報 / 自動除錯紀錄")
-                .setMessage(TransactionStore.getDebugLogs(this))
-                .setNegativeButton("關閉", null)
-                .setNeutralButton("清除紀錄", (d, w) -> TransactionStore.clearDebugLogs(this))
-                .setPositiveButton("掃描重複", (d, w) -> {
-                    int removed = TransactionStore.autoFixDuplicates(this);
-                    Toast.makeText(this, "已移除 " + removed + " 筆疑似重複資料", Toast.LENGTH_LONG).show();
-                    refreshCurrent();
-                })
-                .show();
+        final AlertDialog dialog = new AlertDialog.Builder(this).create();
+        LinearLayout panel = dialogPanel(dp(28));
+        panel.addView(text("錯誤回報 / 自動除錯紀錄", 21, TEXT, true), marginLp(-1, -2, 0, 0, 0, dp(8)));
+        TextView logText = text(TransactionStore.getDebugLogs(this), 14, TEXT, false);
+        logText.setLineSpacing(dp(2), 1.0f);
+        logText.setPadding(dp(14), dp(12), dp(14), dp(12));
+        logText.setBackground(round(CHIP, dp(20), BORDER));
+        ScrollView sc = new ScrollView(this);
+        sc.addView(logText, new ScrollView.LayoutParams(-1, -2));
+        panel.addView(sc, marginLp(-1, dp(250), 0, 0, 0, dp(14)));
+
+        LinearLayout actions = dialogActionsRow();
+        Button clear = pill("清除紀錄", CHIP, GREEN);
+        Button close = pill("關閉", CHIP, TEXT);
+        Button scan = bigSave("掃描重複");
+        actions.addView(clear, marginLp(0, dp(50), 0, 0, dp(6), 0, 1));
+        actions.addView(close, marginLp(0, dp(50), dp(6), 0, dp(6), 0, 1));
+        actions.addView(scan, marginLp(0, dp(50), dp(6), 0, 0, 0, 1));
+        panel.addView(actions);
+
+        clear.setOnClickListener(v -> {
+            TransactionStore.clearDebugLogs(this);
+            dialog.dismiss();
+            showDebugDialog();
+        });
+        close.setOnClickListener(v -> dialog.dismiss());
+        scan.setOnClickListener(v -> {
+            int removed = TransactionStore.autoFixDuplicates(this);
+            Toast.makeText(this, "已移除 " + removed + " 筆疑似重複資料", Toast.LENGTH_LONG).show();
+            dialog.dismiss();
+            refreshCurrent();
+        });
+        showCustomDialog(dialog, panel);
     }
 
     private View detailLine(String k, String v) {
