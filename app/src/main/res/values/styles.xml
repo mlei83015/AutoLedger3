@@ -4,4 +4,11 @@
         <item name="android:windowLightStatusBar">true</item>
         <item name="android:colorAccent">#2E7D32</item>
     </style>
+
+    <style name="AppTheme.Dialog" parent="android:style/Theme.Material.Dialog.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowMinWidthMajor">92%</item>
+        <item name="android:windowMinWidthMinor">92%</item>
+        <item name="android:colorAccent">#27BDE2</item>
+    </style>
 </resources>

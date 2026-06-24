@@ -32,6 +32,7 @@ public class AppSettings {
     public static final String KEY_NOTIFY_BUDGET = "notify_budget";
     public static final String KEY_NOTIFY_DUPLICATE = "notify_duplicate";
     public static final String KEY_DAILY_NOTIFY_TIME = "daily_notify_time";
+    public static final String KEY_CARRIER_BARCODE = "carrier_barcode";
 
     public static final String KEY_EXPENSE_CATEGORIES = "expense_categories";
     public static final String KEY_INCOME_CATEGORIES = "income_categories";

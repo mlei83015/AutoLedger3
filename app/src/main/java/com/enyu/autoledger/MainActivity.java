@@ -861,7 +861,7 @@ public class MainActivity extends Activity {
 
         panel.addView(sideMenuButton("◔", "帳務報表", v -> { closeDialogs(); showStats(); }));
         panel.addView(sideMenuButton("▤", "發票記帳  HOT", v -> showFeatureComing("發票記帳", "之後會接載具發票匯入與中獎提醒。")));
-        panel.addView(sideMenuButton("▦", "記帳小工具", v -> showFeatureComing("記帳小工具", "已加入桌面小工具：可以在桌面看餘額，點「支出／收入」快速新增。Android 小工具本身不能直接輸入文字，所以會開快速新增小視窗。")));
+        panel.addView(sideMenuButton("▦", "記帳小工具", v -> showWidgetInfoDialog()));
         panel.addView(sideMenuButton("👥", "共享帳本", v -> showFeatureComing("共享帳本", "未來可做室友、情侶、社團共同帳本。")));
         panel.addView(sideMenuButton("▦", "分類管理", v -> showSettings()));
         panel.addView(sideMenuButton("🏷", "固定收支", v -> showFeatureComing("固定收支", "之後可新增每月房租、訂閱、薪水自動產生紀錄。")));
@@ -904,6 +904,57 @@ public class MainActivity extends Activity {
                 .setTitle(title)
                 .setMessage(body + "\n\n這個會先放進功能入口，之後可以再做成正式功能。")
                 .setPositiveButton("知道了", null)
+                .show();
+    }
+
+
+    private String carrierSubtitle() {
+        String carrier = BarcodeUtil.normalizeCarrier(AppSettings.getString(this, AppSettings.KEY_CARRIER_BARCODE, ""));
+        return carrier.isEmpty() ? "輸入手機條碼號碼，桌面小工具會自動產生條碼" : "目前載具：" + carrier + "，會顯示在載具小工具";
+    }
+
+    private void showCarrierBarcodeDialog() {
+        final EditText input = new EditText(this);
+        input.setHint("例如：/AB12CDE");
+        input.setSingleLine(true);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS);
+        input.setText(BarcodeUtil.normalizeCarrier(AppSettings.getString(this, AppSettings.KEY_CARRIER_BARCODE, "")));
+        input.setSelectAllOnFocus(true);
+        input.setPadding(dp(14), dp(8), dp(14), dp(8));
+        input.setTextColor(TEXT);
+        input.setHintTextColor(MUTED);
+        input.setBackground(round(CARD, dp(12), BORDER));
+        new AlertDialog.Builder(this)
+                .setTitle("設定載具條碼")
+                .setMessage("不用綁定財政部帳號。只要輸入你的手機條碼號碼，App 會在桌面小工具產生條碼，方便結帳時掃描。\n\n注意：這只是顯示條碼，不會自動登入載具或查發票。")
+                .setView(input)
+                .setNegativeButton("取消", null)
+                .setNeutralButton("清除", (d, w) -> {
+                    AppSettings.setString(this, AppSettings.KEY_CARRIER_BARCODE, "");
+                    try { CarrierBalanceWidgetProvider.updateAll(this); } catch (Exception ignored) { }
+                    Toast.makeText(this, "已清除載具條碼", Toast.LENGTH_SHORT).show();
+                    showSettings();
+                })
+                .setPositiveButton("儲存", (d, w) -> {
+                    String code = BarcodeUtil.normalizeCarrier(input.getText().toString());
+                    if (code.length() < 5) {
+                        Toast.makeText(this, "載具號碼看起來太短，請確認後再儲存", Toast.LENGTH_LONG).show();
+                        return;
+                    }
+                    AppSettings.setString(this, AppSettings.KEY_CARRIER_BARCODE, code);
+                    try { CarrierBalanceWidgetProvider.updateAll(this); } catch (Exception ignored) { }
+                    Toast.makeText(this, "已儲存載具條碼", Toast.LENGTH_SHORT).show();
+                    showSettings();
+                })
+                .show();
+    }
+
+    private void showWidgetInfoDialog() {
+        new AlertDialog.Builder(this)
+                .setTitle("桌面小工具")
+                .setMessage("V10 有兩種桌面小工具：\n\n1. 簡易記帳小工具：顯示餘額、今日花費，點「支出／收入」快速新增。\n\n2. 載具＋記帳小工具：上方顯示載具條碼，下方顯示餘額與快速新增。\n\nAndroid 桌面小工具不能直接放真正的打字輸入框，所以小工具上的「點我輸入金額」會打開一個很小的快速新增視窗，不會進到完整 App。")
+                .setPositiveButton("知道了", null)
+                .setNeutralButton("設定載具", (d, w) -> showCarrierBarcodeDialog())
                 .show();
     }
 
@@ -962,6 +1013,11 @@ public class MainActivity extends Activity {
         startSec.addView(settingButton("鈴鐺通知設定", "設定每日摘要、記帳完成通知與提醒時間", v -> showNotificationSettingsDialog()));
         startSec.addView(settingButton("隱私權政策頁面", "本機保存、通知讀取、資料清除與備份說明", v -> showPrivacyPolicy()));
         box.addView(startSec, marginLp(-1, -2, 0, dp(8), 0, dp(10)));
+
+        LinearLayout widgetSec = section("桌面小工具與載具");
+        widgetSec.addView(settingButton("設定載具條碼", carrierSubtitle(), v -> showCarrierBarcodeDialog()));
+        widgetSec.addView(settingButton("桌面小工具說明", "有兩種：簡易記帳小工具、載具條碼＋餘額小工具", v -> showWidgetInfoDialog()));
+        box.addView(widgetSec, marginLp(-1, -2, 0, 0, 0, dp(10)));
 
         LinearLayout sources = section("通知偵測來源（自動抓取）");
         sources.addView(switchRow("LINE Pay", "擷取付款與交易通知", AppSettings.KEY_LINE_PAY, true));
@@ -1244,7 +1300,7 @@ public class MainActivity extends Activity {
 
     private void showOnboarding() {
         new AlertDialog.Builder(this)
-                .setTitle("歡迎使用自動記帳 V8")
+                .setTitle("歡迎使用自動記帳 V10")
                 .setMessage("這版新增：\n\n1. 通知自動記帳：LINE Pay、載具、Google 錢包、銀行刷卡通知。\n2. 手動補登：收入支出都能加備註。\n3. 點紀錄先查看，長按才快速修改，避免誤觸。\n4. 防重複：同金額短時間交叉比對，避免一筆記兩次。\n5. 可匯出 CSV、備份、還原、清除資料。\n\n建議先去「設定」看通知讀取用途，再開啟通知讀取權限。")
                 .setPositiveButton("我知道了", (d, w) -> AppSettings.setBool(this, AppSettings.KEY_ONBOARDED, true))
                 .setNeutralButton("通知用途", (d, w) -> showNotificationPurpose())

@@ -4,42 +4,64 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:padding="14dp"
+    android:padding="12dp"
     android:background="@drawable/widget_bg">
 
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="自動記帳"
+        android:text="載具＋自動記帳"
         android:textColor="#0E4F6A"
-        android:textSize="14sp"
+        android:textSize="13sp"
         android:textStyle="bold" />
 
-    <TextView
-        android:id="@+id/widget_balance"
+    <ImageView
+        android:id="@+id/widget_carrier_barcode"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="$0"
-        android:textColor="#063B52"
-        android:textSize="28sp"
-        android:textStyle="bold"
-        android:layout_marginTop="2dp" />
+        android:layout_height="74dp"
+        android:layout_marginTop="4dp"
+        android:background="#FFFFFF"
+        android:scaleType="fitXY" />
 
     <TextView
-        android:id="@+id/widget_subtitle"
+        android:id="@+id/widget_carrier_code"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="今日花費 $0"
+        android:text="尚未設定載具"
         android:textColor="#557687"
-        android:textSize="12sp"
-        android:singleLine="true"
-        android:ellipsize="end" />
+        android:textSize="11sp"
+        android:gravity="center"
+        android:singleLine="true" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginTop="6dp">
+        <TextView
+            android:id="@+id/widget_balance"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="$0"
+            android:textColor="#063B52"
+            android:textSize="21sp"
+            android:textStyle="bold" />
+        <TextView
+            android:id="@+id/widget_today"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="今日 $0"
+            android:textColor="#557687"
+            android:textSize="11sp" />
+    </LinearLayout>
 
     <TextView
         android:id="@+id/widget_quick_input"
         android:layout_width="match_parent"
-        android:layout_height="34dp"
-        android:layout_marginTop="8dp"
+        android:layout_height="32dp"
+        android:layout_marginTop="6dp"
         android:gravity="center_vertical"
         android:paddingStart="12dp"
         android:paddingEnd="12dp"
@@ -54,31 +76,29 @@
         android:layout_weight="1"
         android:orientation="horizontal"
         android:gravity="bottom"
-        android:layout_marginTop="8dp">
-
+        android:layout_marginTop="6dp">
         <TextView
             android:id="@+id/widget_expense"
             android:layout_width="0dp"
-            android:layout_height="44dp"
+            android:layout_height="40dp"
             android:layout_weight="1"
             android:gravity="center"
             android:text="＋支出"
             android:textColor="#FFFFFF"
             android:textStyle="bold"
-            android:textSize="15sp"
+            android:textSize="14sp"
             android:background="@drawable/widget_button_expense" />
-
         <TextView
             android:id="@+id/widget_income"
             android:layout_width="0dp"
-            android:layout_height="44dp"
+            android:layout_height="40dp"
             android:layout_weight="1"
             android:layout_marginStart="8dp"
             android:gravity="center"
             android:text="＋收入"
             android:textColor="#FFFFFF"
             android:textStyle="bold"
-            android:textSize="15sp"
+            android:textSize="14sp"
             android:background="@drawable/widget_button_income" />
     </LinearLayout>
 </LinearLayout>

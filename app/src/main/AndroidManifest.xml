@@ -20,7 +20,8 @@
 
         <activity
             android:name=".QuickAddActivity"
-            android:exported="false" />
+            android:exported="false"
+            android:theme="@style/AppTheme.Dialog" />
 
         <service
             android:name=".FinanceNotificationListener"
@@ -49,5 +50,16 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/autoledger_balance_widget" />
         </receiver>
+        <receiver
+            android:name=".CarrierBalanceWidgetProvider"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/autoledger_carrier_widget" />
+        </receiver>
+
     </application>
 </manifest>
