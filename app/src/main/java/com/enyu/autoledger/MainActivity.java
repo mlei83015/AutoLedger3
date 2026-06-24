@@ -4,6 +4,8 @@ import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ComponentName;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
@@ -30,6 +32,7 @@ import android.widget.Toast;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
+import java.util.ArrayList;
 import java.util.Locale;
 
 public class MainActivity extends Activity {
@@ -59,6 +62,9 @@ public class MainActivity extends Activity {
         requestPostNotificationPermissionIfNeeded();
         buildShell();
         showHome();
+        if (!AppSettings.getBool(this, AppSettings.KEY_ONBOARDED, false)) {
+            root.postDelayed(() -> showOnboarding(), 500);
+        }
     }
 
     @Override
@@ -253,7 +259,17 @@ public class MainActivity extends Activity {
         TextView todayLine = text("今天總共花了  " + TransactionStore.money(todayExpense), 18, TEXT, true);
         todayLine.setGravity(Gravity.CENTER);
         todayLine.setTextColor(todayExpense > 0 ? CORAL : MUTED);
-        box.addView(todayLine, marginLp(-1, -2, 0, 0, 0, dp(12)));
+        box.addView(todayLine, marginLp(-1, -2, 0, 0, 0, dp(10)));
+
+        LinearLayout studentTip = card();
+        studentTip.setPadding(dp(14), dp(10), dp(14), dp(10));
+        studentTip.setBackground(round(AppSettings.getBool(this, AppSettings.KEY_DARK_MODE, false) ? 0xFF1B2735 : 0xFFFFF4E8, dp(16), BORDER));
+        int forecastHome = TransactionStore.forecastMonthExpense(this);
+        int savingHome = TransactionStore.suggestedSaving(this);
+        studentTip.addView(text("✨ 本月小提醒", 15, TEXT, true));
+        String tipHome = forecastHome > budgetForMonth ? "照現在速度月底可能超過預算，今天可以先少喝一杯飲料。" : (savingHome > 0 ? "照現在速度月底可能有剩，可以先存 " + TransactionStore.money(savingHome) + "。" : "目前花費接近預算，先維持節奏。") ;
+        studentTip.addView(text(tipHome, 13, MUTED, false));
+        box.addView(studentTip, marginLp(-1, -2, 0, 0, 0, dp(12)));
 
         LinearLayout quick = new LinearLayout(this);
         quick.setOrientation(LinearLayout.HORIZONTAL);
@@ -270,9 +286,11 @@ public class MainActivity extends Activity {
         LinearLayout recordHeader = new LinearLayout(this);
         recordHeader.setGravity(Gravity.CENTER_VERTICAL);
         recordHeader.addView(text("最近記錄", 18, TEXT, true), new LinearLayout.LayoutParams(0, -2, 1));
-        TextView clear = text("清除測試資料", 13, MUTED, false);
+        TextView clear = text("清除資料", 13, MUTED, false);
         clear.setOnClickListener(v -> confirmClear());
         recordHeader.addView(clear);
+        TextView hintEdit = text("  點紀錄可查看 / 長按可修改", 12, MUTED, false);
+        recordHeader.addView(hintEdit);
         box.addView(recordHeader, marginLp(-1, -2, 0, 0, 0, dp(6)));
 
         LinearLayout list = card();
@@ -328,6 +346,8 @@ public class MainActivity extends Activity {
         right.addView(text((income ? "+ " : "- ") + TransactionStore.money(tx.amount), 15, income ? GREEN : TEXT, true));
         right.addView(text(TransactionStore.formatTime(tx.timeMillis), 11, MUTED, false));
         row.addView(right, new LinearLayout.LayoutParams(-2, -2));
+        row.setOnClickListener(v -> showTransactionDetail(tx));
+        row.setOnLongClickListener(v -> { showEditTransactionDialog(tx); return true; });
         return row;
     }
 
@@ -434,17 +454,20 @@ public class MainActivity extends Activity {
     }
 
     private void addPresetChips(LinearLayout box, boolean income, EditText amount, EditText category, EditText merchant, EditText note) {
-        List<Button> chips = new java.util.ArrayList<>();
-        String[][] presets = income
-                ? new String[][]{{"零用錢", "1000", "收入"}, {"薪水", "0", "收入"}, {"紅包", "0", "收入"}, {"退款", "0", "退款"}}
-                : new String[][]{{"午餐", "120", "餐飲"}, {"飲料", "65", "餐飲"}, {"交通", "40", "交通"}, {"停車", "60", "交通"}, {"全聯", "0", "購物"}, {"早餐", "60", "餐飲"}};
-        for (String[] p : presets) {
-            Button chip = presetCard(p[0] + (p[1].equals("0") ? "" : "\n$" + p[1]), 0xFFFFFFFF, ORANGE);
+        List<Button> chips = new ArrayList<>();
+        List<String> presets = income ? AppSettings.getQuickIncome(this) : AppSettings.getQuickExpense(this);
+        for (String line : presets) {
+            String[] p = line.split("\\|");
+            final String name = p.length > 0 ? p[0].trim() : line.trim();
+            final String presetAmount = p.length > 1 ? p[1].trim() : "0";
+            final String presetCategory = p.length > 2 ? p[2].trim() : (income ? "收入" : guessCategory(name));
+            if (name.isEmpty()) continue;
+            Button chip = presetCard(name + ((presetAmount.equals("0") || presetAmount.isEmpty()) ? "" : "\n$" + presetAmount), income ? 0xFFF2F0FF : 0xFFFFF3EA, income ? PURPLE : ORANGE);
             chip.setOnClickListener(v -> {
-                if (amount.getText().toString().trim().isEmpty() && !p[1].equals("0")) amount.setText(p[1]);
-                merchant.setText(p[0]);
-                category.setText(p[2]);
-                if (note.getText().toString().trim().isEmpty()) note.setText(p[0]);
+                if (amount.getText().toString().trim().isEmpty() && !presetAmount.equals("0") && !presetAmount.isEmpty()) amount.setText(presetAmount);
+                merchant.setText(name);
+                category.setText(presetCategory);
+                if (note.getText().toString().trim().isEmpty()) note.setText(name);
             });
             chips.add(chip);
         }
@@ -517,20 +540,50 @@ public class MainActivity extends Activity {
         applyModeColors();
         ScrollView scroll = pageBase();
         LinearLayout box = pageBox(scroll);
-        box.addView(centerTitle("統計"));
+        box.addView(centerTitle("統計與預估"));
         int today = TransactionStore.expenseBetween(this, TransactionStore.startOfDay(0), TransactionStore.startOfDay(1));
         int yesterday = TransactionStore.expenseBetween(this, TransactionStore.startOfDay(-1), TransactionStore.startOfDay(0));
         int month = TransactionStore.monthExpense(this);
+        int income = TransactionStore.monthIncome(this);
+        int budget = AppSettings.getMonthlyBudget(this);
+        int forecast = TransactionStore.forecastMonthExpense(this);
+        int saving = TransactionStore.suggestedSaving(this);
+
         LinearLayout c = card();
         c.addView(text("今天支出：" + TransactionStore.money(today), 22, CORAL, true));
         c.addView(text("昨天支出：" + TransactionStore.money(yesterday), 18, TEXT, true));
         c.addView(text("本月支出：" + TransactionStore.money(month), 18, TEXT, true));
-        c.addView(text("本月預算：" + TransactionStore.money(AppSettings.getMonthlyBudget(this)), 16, MUTED, false));
+        c.addView(text("本月收入：" + TransactionStore.money(income), 16, GREEN, true));
+        c.addView(text("本月預算：" + TransactionStore.money(budget), 16, MUTED, false));
         box.addView(c, marginLp(-1, -2, 0, dp(16), 0, dp(12)));
+
+        LinearLayout forecastCard = card();
+        forecastCard.setBackground(round(AppSettings.getBool(this, AppSettings.KEY_DARK_MODE, false) ? 0xFF1B2633 : 0xFFFFF7EE, dp(16), BORDER));
+        forecastCard.addView(text("月底預估花費", 18, TEXT, true));
+        forecastCard.addView(text("依照目前本月每天平均支出，預估月底約花：" + TransactionStore.money(forecast), 15, TEXT, true));
+        String msg;
+        if (forecast > budget) {
+            msg = "照現在速度，月底可能超過預算 " + TransactionStore.money(forecast - budget) + "，建議先檢查飲料、外食、訂閱。";
+        } else if (saving > 0) {
+            msg = "照現在速度，月底可能還有剩。可以考慮先把約 " + TransactionStore.money(saving) + " 放到儲蓄或定期定額提醒。";
+        } else {
+            msg = "目前接近預算，先維持每天花費不要突然增加。";
+        }
+        forecastCard.addView(text(msg, 15, MUTED, false));
+        forecastCard.addView(text("提醒：這只是預算規劃參考，不是投資建議。", 12, MUTED, false));
+        box.addView(forecastCard, marginLp(-1, -2, 0, 0, 0, dp(12)));
+
         LinearLayout features = card();
-        features.addView(text("智慧摘要", 18, TEXT, true));
-        String tip = month > AppSettings.getMonthlyBudget(this) ? "本月已超過預算，建議先檢查餐飲、交通、訂閱支出。" : "目前還在預算內，可以繼續保持。";
-        features.addView(text(tip, 15, MUTED, false));
+        features.addView(text("資料管理", 18, TEXT, true));
+        Button csv = pill("匯出 CSV", 0xFFFFF0EA, ORANGE);
+        csv.setOnClickListener(v -> shareCsv());
+        features.addView(csv, marginLp(-1, dp(48), 0, dp(8), 0, 0));
+        Button backup = pill("備份資料", CHIP, TEXT);
+        backup.setOnClickListener(v -> shareBackup());
+        features.addView(backup, marginLp(-1, dp(48), 0, dp(8), 0, 0));
+        Button restore = pill("還原資料", CHIP, TEXT);
+        restore.setOnClickListener(v -> showRestoreDialog());
+        features.addView(restore, marginLp(-1, dp(48), 0, dp(8), 0, 0));
         box.addView(features);
         setPage(scroll);
     }
@@ -542,10 +595,17 @@ public class MainActivity extends Activity {
         LinearLayout box = pageBox(scroll);
         box.addView(centerTitle("設定"));
 
+        LinearLayout startSec = section("上架前必備 / 使用說明");
+        startSec.addView(settingButton("第一次開啟的新手說明", "重新看一次 App 使用流程", v -> showOnboarding()));
+        startSec.addView(settingButton("通知讀取用途說明", "說明為什麼需要通知讀取權限", v -> showNotificationPurpose()));
+        startSec.addView(settingButton("隱私權政策頁面", "本機保存、通知讀取、資料清除與備份說明", v -> showPrivacyPolicy()));
+        box.addView(startSec, marginLp(-1, -2, 0, dp(8), 0, dp(10)));
+
         LinearLayout sources = section("通知偵測來源（自動抓取）");
         sources.addView(switchRow("LINE Pay", "擷取付款與交易通知", AppSettings.KEY_LINE_PAY, true));
         sources.addView(switchRow("載具發票", "擷取電子發票與消費資訊", AppSettings.KEY_INVOICE, true));
-        sources.addView(switchRow("銀行通知", "擷取帳戶交易、提款、入帳通知", AppSettings.KEY_BANK, true));
+        sources.addView(switchRow("Google 錢包 / Google Pay", "擷取 Google Wallet 刷卡交易", AppSettings.KEY_GOOGLE_WALLET, true));
+        sources.addView(switchRow("銀行通知", "擷取帳戶交易、信用卡刷卡、提款、入帳通知", AppSettings.KEY_BANK, true));
         sources.addView(switchRow("簡訊通知", "擷取交易簡訊內容", AppSettings.KEY_SMS, true));
         sources.addView(switchRow("其他 App", "其他付款 App 通知", AppSettings.KEY_OTHER, true));
         box.addView(sources, marginLp(-1, -2, 0, dp(8), 0, dp(10)));
@@ -580,25 +640,39 @@ public class MainActivity extends Activity {
         style.addView(palettes);
         box.addView(style, marginLp(-1, -2, 0, 0, 0, dp(10)));
 
-        LinearLayout account = section("帳號與同步");
-        TextView google = text("G  綁定 Google 帳號", 17, TEXT, true);
-        google.setPadding(dp(12), dp(12), dp(12), dp(4));
-        google.setOnClickListener(v -> {
+        LinearLayout manage = section("分類與常用項目");
+        manage.addView(settingButton("支出分類管理", "自訂餐飲、交通、購物、娛樂等分類", v -> showManageListDialog("支出分類管理", AppSettings.KEY_EXPENSE_CATEGORIES, AppSettings.getExpenseCategories(this), "每行一個分類，例如：餐飲")));
+        manage.addView(settingButton("收入分類管理", "自訂薪水、零用錢、退款等分類", v -> showManageListDialog("收入分類管理", AppSettings.KEY_INCOME_CATEGORIES, AppSettings.getIncomeCategories(this), "每行一個分類，例如：薪水")));
+        manage.addView(settingButton("自訂支出常用項目", "格式：名稱|預設金額|分類，例如 午餐|120|餐飲", v -> showManageListDialog("自訂支出常用項目", AppSettings.KEY_QUICK_EXPENSE, AppSettings.getQuickExpense(this), "格式：名稱|金額|分類")));
+        manage.addView(settingButton("自訂收入常用項目", "格式：名稱|預設金額|分類，例如 零用錢|1000|收入", v -> showManageListDialog("自訂收入常用項目", AppSettings.KEY_QUICK_INCOME, AppSettings.getQuickIncome(this), "格式：名稱|金額|分類")));
+        box.addView(manage, marginLp(-1, -2, 0, 0, 0, dp(10)));
+
+        LinearLayout account = section("帳號、備份與資料");
+        account.addView(settingButton("G  綁定 Google 帳號", AppSettings.getBool(this, AppSettings.KEY_GOOGLE_BOUND, false) ? "已啟用同步備份準備項目" : "自用版先建立入口，正式版再接 Google 登入", v -> {
             AppSettings.setBool(this, AppSettings.KEY_GOOGLE_BOUND, true);
             Toast.makeText(this, "自用版先記錄為已綁定；正式版可再接 Google 登入與雲端同步。", Toast.LENGTH_LONG).show();
             showSettings();
-        });
-        account.addView(google);
-        account.addView(text(AppSettings.getBool(this, AppSettings.KEY_GOOGLE_BOUND, false) ? "已啟用同步備份準備項目" : "點一下先開啟同步備份設定", 13, MUTED, false));
+        }));
+        account.addView(settingButton("匯出 CSV", "把所有記帳資料匯出成 CSV 文字，可貼到試算表", v -> shareCsv()));
+        account.addView(settingButton("備份資料", "匯出 JSON 備份，可之後貼回 App 還原", v -> shareBackup()));
+        account.addView(settingButton("還原資料", "貼上之前備份的 JSON 資料", v -> showRestoreDialog()));
+        account.addView(settingButton("清除資料", "清除全部收入、支出、通知 hash 與重複判斷紀錄", v -> confirmClear()));
         box.addView(account, marginLp(-1, -2, 0, 0, 0, dp(10)));
 
-        LinearLayout advanced = section("進階設定");
+        LinearLayout advanced = section("自動除錯與防重複");
         advanced.addView(switchRow("排除自己通知", "不記錄本 App 自己跳出的通知，避免重複記帳", AppSettings.KEY_EXCLUDE_OWN, true));
         advanced.addView(switchRow("防重複記帳", "同一筆通知短時間內自動合併", AppSettings.KEY_DEDUPE, true));
-        advanced.addView(switchRow("自動除錯：LINE Pay / 載具同筆偵測", "LINE Pay 先記、載具較晚進來時，會用金額與日期自動合併", AppSettings.KEY_CROSS_SOURCE_DEDUPE, true));
+        advanced.addView(switchRow("LINE Pay / 載具 / Google 錢包 / 銀行同筆偵測", "同金額短時間或同日交叉比對，避免一筆消費記兩次", AppSettings.KEY_CROSS_SOURCE_DEDUPE, true));
+        advanced.addView(settingButton("立即掃描重複資料", "掃描既有紀錄，移除疑似同一筆的重複資料", v -> {
+            int removed = TransactionStore.autoFixDuplicates(this);
+            Toast.makeText(this, "已掃描完成，移除 " + removed + " 筆疑似重複資料", Toast.LENGTH_LONG).show();
+            refreshCurrent();
+        }));
+        advanced.addView(settingButton("錯誤回報 / 自動除錯紀錄", "查看哪些通知被新增、哪些被判斷為重複", v -> showDebugDialog()));
         advanced.addView(featureRow("智慧分類", "自動判斷餐飲、交通、收入、訂閱等分類"));
         advanced.addView(featureRow("昨日花費摘要", "每天早上自動提醒昨天總共花多少"));
         advanced.addView(featureRow("預算提醒", "超過每月預算時提醒你注意"));
+        advanced.addView(featureRow("月底預估花費", "依照目前花費速度推估月底可能花多少"));
         box.addView(advanced);
         setPage(scroll);
     }
@@ -783,12 +857,239 @@ public class MainActivity extends Activity {
         return lp;
     }
 
+    private View settingButton(String title, String subtitle, View.OnClickListener listener) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(12), dp(10), dp(12), dp(10));
+        LinearLayout texts = new LinearLayout(this);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        texts.addView(text(title, 16, TEXT, true));
+        texts.addView(text(subtitle, 12, MUTED, false));
+        row.addView(texts, new LinearLayout.LayoutParams(0, -2, 1));
+        TextView arrow = text("›", 24, MUTED, true);
+        arrow.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        row.addView(arrow, new LinearLayout.LayoutParams(dp(28), -1));
+        row.setOnClickListener(listener);
+        return row;
+    }
+
+    private void showOnboarding() {
+        new AlertDialog.Builder(this)
+                .setTitle("歡迎使用自動記帳 V6")
+                .setMessage("這版新增：\n\n1. 通知自動記帳：LINE Pay、載具、Google 錢包、銀行刷卡通知。\n2. 手動補登：收入支出都能加備註。\n3. 點紀錄先查看，長按才快速修改，避免誤觸。\n4. 防重複：同金額短時間交叉比對，避免一筆記兩次。\n5. 可匯出 CSV、備份、還原、清除資料。\n\n建議先去「設定」看通知讀取用途，再開啟通知讀取權限。")
+                .setPositiveButton("我知道了", (d, w) -> AppSettings.setBool(this, AppSettings.KEY_ONBOARDED, true))
+                .setNeutralButton("通知用途", (d, w) -> showNotificationPurpose())
+                .show();
+    }
+
+    private void showNotificationPurpose() {
+        new AlertDialog.Builder(this)
+                .setTitle("通知讀取用途說明")
+                .setMessage("自動記帳需要通知讀取權限，是為了在你授權後讀取 LINE Pay、載具發票、Google 錢包、銀行刷卡與交易簡訊通知，從通知文字抓出金額、店家、收入或支出。\n\n資料預設只存在你的手機本機。\n\nApp 會自動排除自己發出的通知，也會用金額、時間、來源與店家判斷同一筆消費，避免重複記帳。")
+                .setPositiveButton("了解", null)
+                .show();
+    }
+
+    private void showPrivacyPolicy() {
+        new AlertDialog.Builder(this)
+                .setTitle("隱私權政策")
+                .setMessage("自動記帳會在你授權後讀取通知內容，用於自動辨識付款、收入、發票與銀行交易。\n\n目前自用版資料預設儲存在手機本機，不會主動上傳到伺服器。\n\n你可以在設定中匯出 CSV、備份資料、還原資料或清除全部資料。\n\n若未來啟用 Google 同步，會在使用者同意後才將記帳資料同步到使用者自己的 Google 帳號。\n\n此 App 不提供投資建議；月底預估與儲蓄提醒只作為預算規劃參考。")
+                .setPositiveButton("關閉", null)
+                .show();
+    }
+
+    private void shareCsv() {
+        String csv = TransactionStore.exportCsv(this);
+        copyToClipboard("AutoLedger CSV", csv);
+        Intent share = new Intent(Intent.ACTION_SEND);
+        share.setType("text/csv");
+        share.putExtra(Intent.EXTRA_SUBJECT, "自動記帳 CSV 匯出");
+        share.putExtra(Intent.EXTRA_TEXT, csv);
+        startActivity(Intent.createChooser(share, "匯出 CSV"));
+    }
+
+    private void shareBackup() {
+        String json = TransactionStore.exportJson(this);
+        copyToClipboard("AutoLedger Backup", json);
+        Intent share = new Intent(Intent.ACTION_SEND);
+        share.setType("application/json");
+        share.putExtra(Intent.EXTRA_SUBJECT, "自動記帳資料備份");
+        share.putExtra(Intent.EXTRA_TEXT, json);
+        startActivity(Intent.createChooser(share, "備份資料"));
+    }
+
+    private void showRestoreDialog() {
+        final EditText input = new EditText(this);
+        input.setHint("貼上備份 JSON 資料");
+        input.setMinLines(6);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        input.setPadding(dp(12), dp(8), dp(12), dp(8));
+        new AlertDialog.Builder(this)
+                .setTitle("還原資料")
+                .setMessage("貼上之前備份的 JSON。還原會覆蓋目前記帳資料，建議先備份再還原。")
+                .setView(input)
+                .setNegativeButton("取消", null)
+                .setPositiveButton("還原", (d, w) -> {
+                    boolean ok = TransactionStore.importJson(this, input.getText().toString());
+                    Toast.makeText(this, ok ? "已還原資料" : "還原失敗，格式不正確", Toast.LENGTH_LONG).show();
+                    refreshCurrent();
+                })
+                .show();
+    }
+
+    private void showManageListDialog(String title, String key, List<String> items, String hint) {
+        final EditText input = new EditText(this);
+        input.setHint(hint);
+        input.setMinLines(7);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        StringBuilder raw = new StringBuilder();
+        for (String item : items) {
+            if (raw.length() > 0) raw.append('\n');
+            raw.append(item);
+        }
+        input.setText(raw.toString());
+        input.setPadding(dp(12), dp(8), dp(12), dp(8));
+        new AlertDialog.Builder(this)
+                .setTitle(title)
+                .setMessage("每一行一個項目。常用項目可用：名稱|金額|分類。金額填 0 代表不預設金額。")
+                .setView(input)
+                .setNegativeButton("取消", null)
+                .setPositiveButton("儲存", (d, w) -> {
+                    List<String> out = new ArrayList<>();
+                    for (String line : input.getText().toString().split("\\n")) {
+                        String clean = line.trim();
+                        if (!clean.isEmpty()) out.add(clean);
+                    }
+                    AppSettings.setList(this, key, out);
+                    Toast.makeText(this, "已儲存", Toast.LENGTH_SHORT).show();
+                    showSettings();
+                })
+                .show();
+    }
+
+    private void showDebugDialog() {
+        new AlertDialog.Builder(this)
+                .setTitle("錯誤回報 / 自動除錯紀錄")
+                .setMessage(TransactionStore.getDebugLogs(this))
+                .setNegativeButton("關閉", null)
+                .setNeutralButton("清除紀錄", (d, w) -> TransactionStore.clearDebugLogs(this))
+                .setPositiveButton("掃描重複", (d, w) -> {
+                    int removed = TransactionStore.autoFixDuplicates(this);
+                    Toast.makeText(this, "已移除 " + removed + " 筆疑似重複資料", Toast.LENGTH_LONG).show();
+                    refreshCurrent();
+                })
+                .show();
+    }
+
+    private void showTransactionDetail(Transaction tx) {
+        String message = "類型：" + ("income".equals(tx.direction) ? "收入" : "支出") +
+                "\n金額：" + TransactionStore.money(tx.amount) +
+                "\n分類：" + tx.category +
+                "\n店家 / 來源：" + tx.merchant +
+                "\n通知來源：" + tx.source +
+                "\n時間：" + TransactionStore.formatTime(tx.timeMillis) +
+                "\n備註 / 原始內容：\n" + tx.raw +
+                "\n\n為了避免誤觸，點紀錄只會先查看；要修改請按「修改」，或在列表長按該筆紀錄。";
+        new AlertDialog.Builder(this)
+                .setTitle("紀錄詳情")
+                .setMessage(message)
+                .setNegativeButton("關閉", null)
+                .setNeutralButton("刪除", (d, w) -> showDeleteTxConfirm(tx))
+                .setPositiveButton("修改", (d, w) -> showEditTransactionDialog(tx))
+                .show();
+    }
+
+    private void showEditTransactionDialog(Transaction tx) {
+        LinearLayout form = new LinearLayout(this);
+        form.setOrientation(LinearLayout.VERTICAL);
+        form.setPadding(dp(8), dp(4), dp(8), dp(4));
+
+        Switch incomeSwitch = new Switch(this);
+        incomeSwitch.setText("收入（關閉就是支出）");
+        incomeSwitch.setTextColor(TEXT);
+        incomeSwitch.setChecked("income".equals(tx.direction));
+        form.addView(incomeSwitch);
+
+        final EditText amount = edit("金額", true);
+        amount.setInputType(InputType.TYPE_CLASS_NUMBER);
+        amount.setText(String.valueOf(tx.amount));
+        form.addView(label("金額"));
+        form.addView(amount, marginLp(-1, dp(52), 0, 0, 0, dp(8)));
+
+        final EditText category = edit("分類", false);
+        category.setText(tx.category);
+        form.addView(label("分類"));
+        form.addView(category, marginLp(-1, dp(52), 0, 0, 0, dp(8)));
+
+        final EditText merchant = edit("店家 / 來源", false);
+        merchant.setText(tx.merchant);
+        form.addView(label("店家 / 來源"));
+        form.addView(merchant, marginLp(-1, dp(52), 0, 0, 0, dp(8)));
+
+        final EditText note = edit("備註 / 用在哪裡", false);
+        note.setMinLines(3);
+        note.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        note.setText(tx.raw);
+        form.addView(label("備註 / 用在哪裡"));
+        form.addView(note, marginLp(-1, dp(90), 0, 0, 0, dp(8)));
+
+        new AlertDialog.Builder(this)
+                .setTitle("修改紀錄")
+                .setMessage("自動記帳與手動記帳都可以改。修改後會重新計算首頁餘額、圓形圖與統計。")
+                .setView(form)
+                .setNegativeButton("取消", null)
+                .setPositiveButton("儲存", (d, w) -> {
+                    int value = 0;
+                    try { value = Integer.parseInt(amount.getText().toString().replace(",", "").trim()); } catch (Exception ignored) { }
+                    if (value <= 0) {
+                        Toast.makeText(this, "金額要大於 0", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    Transaction edited = new Transaction(
+                            tx.timeMillis,
+                            value,
+                            incomeSwitch.isChecked() ? "income" : "expense",
+                            tx.source,
+                            merchant.getText().toString().trim(),
+                            category.getText().toString().trim().isEmpty() ? (incomeSwitch.isChecked() ? "收入" : "未分類") : category.getText().toString().trim(),
+                            note.getText().toString().trim(),
+                            tx.hash == null || tx.hash.isEmpty() ? "edit-" + tx.timeMillis : tx.hash
+                    );
+                    boolean ok = TransactionStore.update(this, tx.hash, tx.timeMillis, edited);
+                    Toast.makeText(this, ok ? "已修改紀錄" : "修改失敗", Toast.LENGTH_SHORT).show();
+                    refreshCurrent();
+                })
+                .show();
+    }
+
+    private void showDeleteTxConfirm(Transaction tx) {
+        new AlertDialog.Builder(this)
+                .setTitle("刪除這筆紀錄？")
+                .setMessage("刪除後無法再復原。\n\n" + ("income".equals(tx.direction) ? "收入 " : "支出 ") + TransactionStore.money(tx.amount) + "｜" + tx.merchant)
+                .setNegativeButton("取消", null)
+                .setPositiveButton("刪除", (d, w) -> {
+                    boolean ok = TransactionStore.delete(this, tx.hash, tx.timeMillis);
+                    Toast.makeText(this, ok ? "已刪除" : "刪除失敗", Toast.LENGTH_SHORT).show();
+                    refreshCurrent();
+                })
+                .show();
+    }
+
+    private void copyToClipboard(String label, String text) {
+        try {
+            ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+            if (cm != null) cm.setPrimaryClip(ClipData.newPlainText(label, text));
+            Toast.makeText(this, "已複製到剪貼簿", Toast.LENGTH_SHORT).show();
+        } catch (Exception ignored) { }
+    }
+
     private void confirmClear() {
         new AlertDialog.Builder(this)
-                .setTitle("清除紀錄")
-                .setMessage("確定要清除目前所有記帳資料嗎？")
+                .setTitle("確認清除資料？")
+                .setMessage("你要確認要刪除資料嗎？\n\n刪除後會清除所有收入、支出、通知 hash 與重複判斷紀錄。\n\n刪除資料無法再復原，建議先備份資料。")
                 .setNegativeButton("取消", null)
-                .setPositiveButton("清除", (d, w) -> { TransactionStore.clear(this); showHome(); })
+                .setPositiveButton("確認刪除", (d, w) -> { TransactionStore.clear(this); Toast.makeText(this, "已清除全部資料", Toast.LENGTH_SHORT).show(); showHome(); })
                 .show();
     }
 

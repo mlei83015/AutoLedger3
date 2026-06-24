@@ -3,14 +3,21 @@ package com.enyu.autoledger;
 import android.content.Context;
 import android.content.SharedPreferences;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
+
 public class AppSettings {
-    private static final String PREF = "auto_ledger_settings_v3";
+    private static final String PREF = "auto_ledger_settings_v6";
 
     public static final String KEY_LINE_PAY = "detect_line_pay";
     public static final String KEY_INVOICE = "detect_invoice";
     public static final String KEY_BANK = "detect_bank";
     public static final String KEY_SMS = "detect_sms";
     public static final String KEY_OTHER = "detect_other";
+    public static final String KEY_GOOGLE_WALLET = "detect_google_wallet";
     public static final String KEY_EXCLUDE_OWN = "exclude_own";
     public static final String KEY_DEDUPE = "dedupe";
     public static final String KEY_GOOGLE_BOUND = "google_bound";
@@ -19,6 +26,12 @@ public class AppSettings {
     public static final String KEY_THEME = "theme";
     public static final String KEY_PALETTE = "palette";
     public static final String KEY_MONTHLY_BUDGET = "monthly_budget";
+    public static final String KEY_ONBOARDED = "onboarded_v6";
+
+    public static final String KEY_EXPENSE_CATEGORIES = "expense_categories";
+    public static final String KEY_INCOME_CATEGORIES = "income_categories";
+    public static final String KEY_QUICK_EXPENSE = "quick_expense";
+    public static final String KEY_QUICK_INCOME = "quick_income";
 
     private static SharedPreferences sp(Context c) {
         return c.getSharedPreferences(PREF, Context.MODE_PRIVATE);
@@ -56,6 +69,60 @@ public class AppSettings {
         sp(c).edit().putInt(KEY_MONTHLY_BUDGET, Math.max(0, amount)).apply();
     }
 
+    public static String getString(Context c, String key, String def) {
+        return sp(c).getString(key, def);
+    }
+
+    public static void setString(Context c, String key, String value) {
+        sp(c).edit().putString(key, value == null ? "" : value).apply();
+    }
+
+    public static List<String> getExpenseCategories(Context c) {
+        return getList(c, KEY_EXPENSE_CATEGORIES, "餐飲\n交通\n超商\n購物\n娛樂\n訂閱\n提款\n未分類");
+    }
+
+    public static List<String> getIncomeCategories(Context c) {
+        return getList(c, KEY_INCOME_CATEGORIES, "收入\n薪水\n零用錢\n打工\n退款\n紅包");
+    }
+
+    public static List<String> getQuickExpense(Context c) {
+        return getList(c, KEY_QUICK_EXPENSE, "午餐|120|餐飲\n飲料|65|餐飲\n交通|40|交通\n停車|60|交通\n全聯|0|購物\n早餐|60|餐飲");
+    }
+
+    public static List<String> getQuickIncome(Context c) {
+        return getList(c, KEY_QUICK_INCOME, "零用錢|1000|收入\n薪水|0|薪水\n打工|0|打工\n紅包|0|紅包\n退款|0|退款");
+    }
+
+    public static void setList(Context c, String key, List<String> items) {
+        StringBuilder b = new StringBuilder();
+        if (items != null) {
+            LinkedHashSet<String> set = new LinkedHashSet<>();
+            for (String item : items) {
+                String clean = item == null ? "" : item.trim();
+                if (!clean.isEmpty()) set.add(clean);
+            }
+            for (String item : set) {
+                if (b.length() > 0) b.append('\n');
+                b.append(item);
+            }
+        }
+        setString(c, key, b.toString());
+    }
+
+    public static List<String> getList(Context c, String key, String defaultText) {
+        String raw = getString(c, key, defaultText);
+        List<String> out = new ArrayList<>();
+        Set<String> unique = new LinkedHashSet<>();
+        if (raw != null) {
+            for (String line : raw.split("\\n")) {
+                String clean = line.trim();
+                if (!clean.isEmpty()) unique.add(clean);
+            }
+        }
+        out.addAll(unique);
+        return out;
+    }
+
     public static boolean shouldDetectSource(Context c, String packageName, String appName, String title, String text) {
         String all = ((packageName == null ? "" : packageName) + " " +
                 (appName == null ? "" : appName) + " " +
@@ -64,11 +131,13 @@ public class AppSettings {
 
         boolean isLinePay = all.contains("line pay") || all.contains("linepay") || all.contains("line錢包") || all.contains("line pay付款") || all.contains("line pay 付款");
         boolean isInvoice = all.contains("載具") || all.contains("發票") || all.contains("invoice") || all.contains("einvoice") || all.contains("財政部");
-        boolean isBank = all.contains("銀行") || all.contains("帳戶") || all.contains("信用卡") || all.contains("金融卡") || all.contains("atm") || all.contains("bank");
+        boolean isGoogleWallet = all.contains("google wallet") || all.contains("google pay") || all.contains("gpay") || all.contains("google錢包") || all.contains("google 錢包") || all.contains("walletnfcrel");
+        boolean isBank = all.contains("銀行") || all.contains("帳戶") || all.contains("信用卡") || all.contains("金融卡") || all.contains("刷卡") || all.contains("atm") || all.contains("bank");
         boolean isSms = all.contains("sms") || all.contains("mms") || all.contains("簡訊") || all.contains("訊息");
 
         if (isLinePay) return getBool(c, KEY_LINE_PAY, true);
         if (isInvoice) return getBool(c, KEY_INVOICE, true);
+        if (isGoogleWallet) return getBool(c, KEY_GOOGLE_WALLET, true);
         if (isBank) return getBool(c, KEY_BANK, true);
         if (isSms) return getBool(c, KEY_SMS, true);
         return getBool(c, KEY_OTHER, true);

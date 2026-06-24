@@ -8,10 +8,8 @@ import java.util.regex.Pattern;
 public class FinanceParser {
     private static final Pattern[] AMOUNT_PATTERNS = new Pattern[]{
             Pattern.compile("(?:NT\\$|NTD|TWD|\\$|新臺幣|台幣|臺幣)\\s*([0-9,]+)", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("([0-9,]+)\\s*元"),
-            Pattern.compile("金額[:：]?\\s*([0-9,]+)"),
-            Pattern.compile("扣款[:：]?\\s*([0-9,]+)"),
-            Pattern.compile("付款[:：]?\\s*([0-9,]+)")
+            Pattern.compile("(?:金額|扣款|付款|支付|刷卡|消費|交易金額|消費金額|合計|共計)[:：]?\\s*(?:NT\\$|NTD|TWD|\\$)?\\s*([0-9,]+)", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("([0-9,]+)\\s*元")
     };
 
     public static Transaction parse(long timeMillis, String packageName, String appName, String title, String text) {
@@ -20,7 +18,7 @@ public class FinanceParser {
         int amount = extractAmount(normalized);
         if (amount <= 0) return null;
 
-        String direction = detectDirection(normalized, packageName);
+        String direction = detectDirection(normalized, packageName, appName);
         if (direction == null) return null;
 
         String merchant = detectMerchant(normalized, title, appName);
@@ -52,14 +50,15 @@ public class FinanceParser {
         return 0;
     }
 
-    private static String detectDirection(String s, String packageName) {
-        String lower = s.toLowerCase(Locale.ROOT);
-        boolean isLine = packageName != null && (packageName.contains("line") || lower.contains("line pay"));
+    private static String detectDirection(String s, String packageName, String appName) {
+        String lower = (s + " " + packageName + " " + appName).toLowerCase(Locale.ROOT);
+        boolean isLinePay = lower.contains("line pay") || lower.contains("linepay") || lower.contains("line錢包");
+        boolean isGoogleWallet = lower.contains("google wallet") || lower.contains("google pay") || lower.contains("google錢包") || lower.contains("google 錢包") || lower.contains("walletnfcrel");
 
-        if (containsAny(s, "入帳", "轉入", "匯入", "收到匯款", "薪資", "存入", "退款", "退貨")) {
+        if (containsAny(s, "入帳", "轉入", "匯入", "收到匯款", "薪資", "薪水", "存入", "退款", "退貨", "退刷", "還款入帳")) {
             return "income";
         }
-        if (containsAny(s, "付款成功", "付款", "消費", "扣款", "刷卡", "提款", "轉出", "支出", "扣帳", "支付", "發票", "載具", "消費明細") || isLine) {
+        if (containsAny(s, "付款成功", "交易成功", "付款", "消費", "扣款", "刷卡", "提款", "轉出", "支出", "扣帳", "支付", "發票", "載具", "消費明細", "交易明細") || isLinePay || isGoogleWallet) {
             return "expense";
         }
         return null;
@@ -67,14 +66,14 @@ public class FinanceParser {
 
     private static String detectMerchant(String s, String title, String appName) {
         if (s == null) return appName == null ? "未知來源" : appName;
-        String[] markers = new String[]{"於", "在", "商店", "店家"};
+        String[] markers = new String[]{"於", "在", "商店", "店家", "特店", "商戶", "地點", "Merchant", "merchant"};
         for (String marker : markers) {
             int idx = s.indexOf(marker);
             if (idx >= 0 && idx + marker.length() < s.length()) {
                 String tail = s.substring(idx + marker.length()).trim();
-                tail = tail.replaceAll("(消費|付款|扣款|支付|金額|共計|合計|NT\\$|元).*$", "").trim();
+                tail = tail.replaceAll("(消費|付款|扣款|支付|金額|共計|合計|NT\\$|元|交易).*$", "").trim();
                 tail = tail.replaceAll("[,:：，。].*$", "").trim();
-                if (tail.length() >= 2 && tail.length() <= 20) return tail;
+                if (tail.length() >= 2 && tail.length() <= 24) return tail;
             }
         }
         if (title != null && title.length() > 0 && title.length() <= 24) return title;
@@ -85,8 +84,8 @@ public class FinanceParser {
         if ("income".equals(direction)) return "收入";
         String all = (s + " " + merchant).toUpperCase(Locale.ROOT);
         if (containsAny(all, "7-ELEVEN", "711", "全家", "萊爾富", "OK超商", "統一超商", "便利商店", "超商")) return "超商";
-        if (containsAny(all, "飲料", "咖啡", "早餐", "午餐", "晚餐", "餐", "麥當勞", "KFC", "星巴克", "迷客夏", "清心", "可不可")) return "飲食";
-        if (containsAny(all, "公車", "台鐵", "高鐵", "捷運", "UBER", "TAXI", "停車", "加油")) return "交通";
+        if (containsAny(all, "飲料", "咖啡", "早餐", "午餐", "晚餐", "餐", "麥當勞", "KFC", "星巴克", "迷客夏", "清心", "可不可")) return "餐飲";
+        if (containsAny(all, "公車", "台鐵", "高鐵", "捷運", "UBER", "TAXI", "停車", "加油", "悠遊卡")) return "交通";
         if (containsAny(all, "提款", "ATM")) return "提款";
         if (containsAny(all, "NETFLIX", "SPOTIFY", "YOUTUBE", "APPLE", "GOOGLE", "訂閱")) return "訂閱";
         return "未分類";
