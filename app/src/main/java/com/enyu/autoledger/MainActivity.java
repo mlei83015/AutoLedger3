@@ -920,14 +920,24 @@ public class MainActivity extends Activity {
         input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS);
         input.setText(BarcodeUtil.normalizeCarrier(AppSettings.getString(this, AppSettings.KEY_CARRIER_BARCODE, "")));
         input.setSelectAllOnFocus(true);
-        input.setPadding(dp(14), dp(8), dp(14), dp(8));
-        input.setTextColor(TEXT);
-        input.setHintTextColor(MUTED);
-        input.setBackground(round(CARD, dp(12), BORDER));
+        input.setTextSize(18);
+        input.setPadding(dp(14), 0, dp(14), 0);
+        input.setTextColor(0xFF1F2933);
+        input.setHintTextColor(0xFF8A96A3);
+        input.setBackground(round(0xFFF8FBFF, dp(12), 0xFFD6EAF5));
+
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(4), dp(2), dp(4), 0);
+        panel.addView(text("不用綁定財政部帳號。只要輸入手機條碼號碼，App 會在桌面小工具產生條碼，方便結帳時掃描。", 14, 0xFF27323A, false));
+        TextView warn = text("注意：這只是顯示條碼，不會自動登入載具或查發票。", 13, 0xFF6A7680, false);
+        warn.setPadding(0, dp(8), 0, dp(8));
+        panel.addView(warn);
+        panel.addView(input, marginLp(-1, dp(48), 0, dp(4), 0, 0));
+
         new AlertDialog.Builder(this)
                 .setTitle("設定載具條碼")
-                .setMessage("不用綁定財政部帳號。只要輸入你的手機條碼號碼，App 會在桌面小工具產生條碼，方便結帳時掃描。\n\n注意：這只是顯示條碼，不會自動登入載具或查發票。")
-                .setView(input)
+                .setView(panel)
                 .setNegativeButton("取消", null)
                 .setNeutralButton("清除", (d, w) -> {
                     AppSettings.setString(this, AppSettings.KEY_CARRIER_BARCODE, "");
@@ -943,7 +953,7 @@ public class MainActivity extends Activity {
                     }
                     AppSettings.setString(this, AppSettings.KEY_CARRIER_BARCODE, code);
                     try { CarrierBalanceWidgetProvider.updateAll(this); } catch (Exception ignored) { }
-                    Toast.makeText(this, "已儲存載具條碼", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, "已儲存載具條碼，點桌面條碼可複製", Toast.LENGTH_SHORT).show();
                     showSettings();
                 })
                 .show();
@@ -952,36 +962,57 @@ public class MainActivity extends Activity {
     private void showWidgetInfoDialog() {
         new AlertDialog.Builder(this)
                 .setTitle("桌面小工具")
-                .setMessage("V10 有兩種桌面小工具：\n\n1. 簡易記帳小工具：顯示餘額、今日花費，點「支出／收入」快速新增。\n\n2. 載具＋記帳小工具：上方顯示載具條碼，下方顯示餘額與快速新增。\n\nAndroid 桌面小工具不能直接放真正的打字輸入框，所以小工具上的「點我輸入金額」會打開一個很小的快速新增視窗，不會進到完整 App。")
+                .setMessage("V11 有兩種桌面小工具：\n\n1. 簡易記帳小工具：顯示餘額、今日花費，點「支出／收入」快速新增。\n\n2. 載具＋記帳小工具：上方只顯示一個載具條碼，點條碼可以複製載具號碼，下方顯示餘額與快速新增。\n\nAndroid 桌面小工具不能直接放真正的打字輸入框，所以小工具上的「點我輸入金額」會打開一個很小的快速新增視窗，不會進到完整 App。")
                 .setPositiveButton("知道了", null)
                 .setNeutralButton("設定載具", (d, w) -> showCarrierBarcodeDialog())
                 .show();
     }
 
+    private View dialogSwitchRow(String title, String subtitle, String key, boolean def) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(6), dp(8), dp(2), dp(8));
+        LinearLayout texts = new LinearLayout(this);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        texts.addView(text(title, 16, 0xFF1F2933, true));
+        texts.addView(text(subtitle, 12, 0xFF66727E, false));
+        row.addView(texts, new LinearLayout.LayoutParams(0, -2, 1));
+        Switch sw = new Switch(this);
+        sw.setChecked(AppSettings.getBool(this, key, def));
+        sw.setOnCheckedChangeListener((buttonView, isChecked) -> AppSettings.setBool(this, key, isChecked));
+        row.addView(sw);
+        return row;
+    }
+
     private void showNotificationSettingsDialog() {
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(8), dp(4), dp(8), dp(4));
+        panel.setPadding(dp(6), dp(2), dp(6), dp(4));
+        panel.setBackgroundColor(0xFFFFFFFF);
 
-        panel.addView(text("通知開關", 17, TEXT, true));
-        panel.addView(switchRow("每日昨日花費摘要", "每天固定時間提醒你昨天花多少", AppSettings.KEY_NOTIFY_DAILY, true));
-        panel.addView(switchRow("自動記帳完成通知", "每記到一筆就跳小通知", AppSettings.KEY_NOTIFY_AUTO_SAVED, true));
-        panel.addView(switchRow("預算提醒", "接近或超過本月預算時提醒", AppSettings.KEY_NOTIFY_BUDGET, true));
-        panel.addView(switchRow("重複資料提醒", "偵測到疑似同一筆時提醒你", AppSettings.KEY_NOTIFY_DUPLICATE, false));
+        panel.addView(text("通知開關", 17, 0xFF1F2933, true));
+        panel.addView(dialogSwitchRow("每日昨日花費摘要", "每天固定時間提醒你昨天花多少", AppSettings.KEY_NOTIFY_DAILY, true));
+        panel.addView(dialogSwitchRow("自動記帳完成通知", "每記到一筆就跳小通知", AppSettings.KEY_NOTIFY_AUTO_SAVED, true));
+        panel.addView(dialogSwitchRow("預算提醒", "接近或超過本月預算時提醒", AppSettings.KEY_NOTIFY_BUDGET, true));
+        panel.addView(dialogSwitchRow("重複資料提醒", "偵測到疑似同一筆時提醒你", AppSettings.KEY_NOTIFY_DUPLICATE, false));
 
         final EditText time = new EditText(this);
         time.setHint("09:00");
         time.setText(AppSettings.getString(this, AppSettings.KEY_DAILY_NOTIFY_TIME, "09:00"));
         time.setSingleLine(true);
+        time.setTextSize(18);
         time.setInputType(InputType.TYPE_CLASS_TEXT);
-        time.setTextColor(TEXT);
-        time.setHintTextColor(MUTED);
+        time.setTextColor(0xFF1F2933);
+        time.setHintTextColor(0xFF8A96A3);
         time.setPadding(dp(12), 0, dp(12), 0);
-        time.setBackground(round(CARD, dp(12), BORDER));
-        panel.addView(label("每日摘要通知時間（24 小時制）"));
-        panel.addView(time, marginLp(-1, dp(52), 0, dp(4), 0, dp(8)));
+        time.setBackground(round(0xFFF8FBFF, dp(12), 0xFFD6EAF5));
+        TextView timeLabel = text("每日摘要通知時間（24 小時制）", 14, 0xFF1F2933, true);
+        timeLabel.setPadding(0, dp(8), 0, dp(4));
+        panel.addView(timeLabel);
+        panel.addView(time, marginLp(-1, dp(50), 0, dp(2), 0, dp(8)));
 
-        panel.addView(text("也可以到設定頁面調整 LINE Pay、載具、Google 錢包、銀行通知等偵測來源。", 13, MUTED, false));
+        panel.addView(text("也可以到設定頁面調整 LINE Pay、載具、Google 錢包、銀行通知等偵測來源。", 13, 0xFF66727E, false));
 
         new AlertDialog.Builder(this)
                 .setTitle("鈴鐺通知設定")
@@ -989,7 +1020,7 @@ public class MainActivity extends Activity {
                 .setNegativeButton("取消", null)
                 .setPositiveButton("儲存", (d, w) -> {
                     String raw = time.getText().toString().trim();
-                    if (!raw.matches("^([01]?\\d|2[0-3]):[0-5]\\d$")) {
+                    if (!raw.matches("^([01]?\d|2[0-3]):[0-5]\d$")) {
                         Toast.makeText(this, "時間格式請輸入 09:00 這種格式", Toast.LENGTH_LONG).show();
                         return;
                     }

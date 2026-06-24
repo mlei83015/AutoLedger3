@@ -4,41 +4,45 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:padding="12dp"
+    android:padding="13dp"
     android:background="@drawable/widget_bg">
 
-    <TextView
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="載具＋自動記帳"
-        android:textColor="#0E4F6A"
-        android:textSize="13sp"
-        android:textStyle="bold" />
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="載具條碼"
+            android:textColor="#083E57"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="點條碼複製"
+            android:textColor="#51849A"
+            android:textSize="10sp" />
+    </LinearLayout>
 
     <ImageView
         android:id="@+id/widget_carrier_barcode"
         android:layout_width="match_parent"
-        android:layout_height="74dp"
-        android:layout_marginTop="4dp"
+        android:layout_height="86dp"
+        android:layout_marginTop="5dp"
+        android:padding="5dp"
         android:background="#FFFFFF"
         android:scaleType="fitXY" />
-
-    <TextView
-        android:id="@+id/widget_carrier_code"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="尚未設定載具"
-        android:textColor="#557687"
-        android:textSize="11sp"
-        android:gravity="center"
-        android:singleLine="true" />
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:layout_marginTop="6dp">
+        android:layout_marginTop="8dp">
         <TextView
             android:id="@+id/widget_balance"
             android:layout_width="0dp"
@@ -46,7 +50,7 @@
             android:layout_weight="1"
             android:text="$0"
             android:textColor="#063B52"
-            android:textSize="21sp"
+            android:textSize="22sp"
             android:textStyle="bold" />
         <TextView
             android:id="@+id/widget_today"
@@ -60,7 +64,7 @@
     <TextView
         android:id="@+id/widget_quick_input"
         android:layout_width="match_parent"
-        android:layout_height="32dp"
+        android:layout_height="34dp"
         android:layout_marginTop="6dp"
         android:gravity="center_vertical"
         android:paddingStart="12dp"
@@ -76,11 +80,11 @@
         android:layout_weight="1"
         android:orientation="horizontal"
         android:gravity="bottom"
-        android:layout_marginTop="6dp">
+        android:layout_marginTop="8dp">
         <TextView
             android:id="@+id/widget_expense"
             android:layout_width="0dp"
-            android:layout_height="40dp"
+            android:layout_height="42dp"
             android:layout_weight="1"
             android:gravity="center"
             android:text="＋支出"
@@ -91,9 +95,9 @@
         <TextView
             android:id="@+id/widget_income"
             android:layout_width="0dp"
-            android:layout_height="40dp"
+            android:layout_height="42dp"
             android:layout_weight="1"
-            android:layout_marginStart="8dp"
+            android:layout_marginStart="10dp"
             android:gravity="center"
             android:text="＋收入"
             android:textColor="#FFFFFF"

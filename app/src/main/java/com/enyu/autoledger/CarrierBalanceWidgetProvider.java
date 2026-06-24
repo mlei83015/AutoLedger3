@@ -32,14 +32,16 @@ public class CarrierBalanceWidgetProvider extends AppWidgetProvider {
         RemoteViews views = new RemoteViews(context.getPackageName(), R.layout.widget_carrier_balance);
         views.setTextViewText(R.id.widget_balance, TransactionStore.money(balance));
         views.setTextViewText(R.id.widget_today, "今日 " + TransactionStore.money(today));
-        views.setTextViewText(R.id.widget_carrier_code, carrier.isEmpty() ? "點小工具進 App 設定載具號碼" : carrier);
         Bitmap bm = BarcodeUtil.code39(carrier.isEmpty() ? "/ABC123" : carrier, 900, 230);
         views.setImageViewBitmap(R.id.widget_carrier_barcode, bm);
 
         Intent openIntent = new Intent(context, MainActivity.class);
         openIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         views.setOnClickPendingIntent(R.id.widget_root, pending(context, 4000 + widgetId, openIntent));
-        views.setOnClickPendingIntent(R.id.widget_carrier_barcode, pending(context, 4100 + widgetId, openIntent));
+
+        Intent copyIntent = new Intent(context, CopyCarrierReceiver.class);
+        copyIntent.setAction(CopyCarrierReceiver.ACTION_COPY_CARRIER);
+        views.setOnClickPendingIntent(R.id.widget_carrier_barcode, pendingBroadcast(context, 4100 + widgetId, copyIntent));
 
         Intent quickInputIntent = new Intent(context, QuickAddActivity.class);
         quickInputIntent.setAction(MainActivity.ACTION_QUICK_EXPENSE);
@@ -63,5 +65,11 @@ public class CarrierBalanceWidgetProvider extends AppWidgetProvider {
         int flags = PendingIntent.FLAG_UPDATE_CURRENT;
         if (Build.VERSION.SDK_INT >= 23) flags |= PendingIntent.FLAG_IMMUTABLE;
         return PendingIntent.getActivity(context, requestCode, intent, flags);
+    }
+
+    private static PendingIntent pendingBroadcast(Context context, int requestCode, Intent intent) {
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (Build.VERSION.SDK_INT >= 23) flags |= PendingIntent.FLAG_IMMUTABLE;
+        return PendingIntent.getBroadcast(context, requestCode, intent, flags);
     }
 }
