@@ -38,6 +38,9 @@ public class DailyReportReceiver extends BroadcastReceiver {
         String dir = "income".equals(tx.direction) ? "收入" : "支出";
         String title = "已自動記帳：" + dir + " $" + tx.amount;
         String body = tx.category + "｜" + tx.merchant;
+        if (tx.originalAmount > 0 && tx.originalAmount != tx.amount) {
+            body = "實付 $" + tx.amount + "｜原價 $" + tx.originalAmount + "｜折抵 $" + tx.discountAmount;
+        }
         showNotification(context, (int) (System.currentTimeMillis() % 100000), CHANNEL_SAVED, title, body, false);
     }
 

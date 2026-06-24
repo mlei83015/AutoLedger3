@@ -32,26 +32,116 @@ public class TransactionStore {
             return false;
         }
         List<Transaction> list = getAll(context);
+        if (AppSettings.getBool(context, AppSettings.KEY_DEDUPE, true) && mergePointDiscountIfNeeded(context, list, tx)) {
+            markSeen(sp, seen, tx);
+            return true;
+        }
         if (AppSettings.getBool(context, AppSettings.KEY_DEDUPE, true) && looksDuplicate(context, list, tx)) {
             return false;
         }
         list.add(tx);
         saveAll(context, list);
-        if (tx.hash != null && !tx.hash.isEmpty()) {
-            seen.add(tx.hash);
-            if (seen.size() > 500) {
-                Set<String> smaller = new HashSet<>();
-                int i = 0;
-                for (String h : seen) {
-                    smaller.add(h);
-                    if (++i >= 300) break;
-                }
-                seen = smaller;
-            }
-            sp.edit().putStringSet(KEY_SEEN, seen).apply();
-        }
+        markSeen(sp, seen, tx);
         log(context, "新增成功｜" + summary(tx));
         return true;
+    }
+
+
+    private static void markSeen(SharedPreferences sp, Set<String> seen, Transaction tx) {
+        if (tx == null || tx.hash == null || tx.hash.isEmpty()) return;
+        seen.add(tx.hash);
+        if (seen.size() > 500) {
+            Set<String> smaller = new HashSet<>();
+            int i = 0;
+            for (String h : seen) {
+                smaller.add(h);
+                if (++i >= 300) break;
+            }
+            seen = smaller;
+        }
+        sp.edit().putStringSet(KEY_SEEN, seen).apply();
+    }
+
+    private static boolean mergePointDiscountIfNeeded(Context context, List<Transaction> list, Transaction tx) {
+        if (tx == null || tx.hash == null || tx.hash.startsWith("manual-") || !"expense".equals(tx.direction)) return false;
+        String newType = sourceType(tx);
+        if (!isPaymentSignal(newType)) return false;
+
+        int checked = 0;
+        for (int i = 0; i < list.size(); i++) {
+            if (checked++ > 220) break;
+            Transaction old = list.get(i);
+            if (old == null || !"expense".equals(old.direction)) continue;
+            if (old.hash != null && old.hash.startsWith("manual-")) continue;
+            if (old.amount == tx.amount) continue;
+
+            String oldType = sourceType(old);
+            if (!isPaymentSignal(oldType)) continue;
+            if (oldType.equals(newType)) continue;
+
+            long diff = Math.abs(old.timeMillis - tx.timeMillis);
+            boolean sameDate = sameDay(old.timeMillis, tx.timeMillis);
+            boolean sameMerchant = merchantSimilar(old.merchant, tx.merchant)
+                    || merchantSimilar(old.raw, tx.raw)
+                    || merchantSimilar(old.merchant, tx.raw)
+                    || merchantSimilar(old.raw, tx.merchant);
+            boolean knownPair = isLineBankWalletPair(oldType, newType) || isInvoiceWithWalletBank(oldType, newType);
+            int high = Math.max(old.amount, tx.amount);
+            int low = Math.min(old.amount, tx.amount);
+            int discount = high - low;
+            if (discount <= 0) continue;
+            boolean reasonableDiscount = discount <= 500 || low >= Math.round(high * 0.55f);
+            boolean strongTiming = diff <= 45L * 60L * 1000L;
+            boolean delayedInvoice = isInvoiceWithWalletBank(oldType, newType) && diff <= 72L * 60L * 60L * 1000L && (sameDate || sameMerchant);
+            boolean delayedLineBank = isLineBankWalletPair(oldType, newType) && diff <= 12L * 60L * 60L * 1000L && (sameDate && sameMerchant);
+
+            if (knownPair && reasonableDiscount && (strongTiming || delayedInvoice || delayedLineBank)) {
+                Transaction merged = buildDiscountMergedTransaction(old, tx);
+                list.set(i, merged);
+                saveAll(context, list);
+                log(context, "V23 點數/優惠折抵合併｜原價 " + money(merged.originalAmount) + "｜實付 " + money(merged.amount) + "｜折抵 " + money(merged.discountAmount));
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static Transaction buildDiscountMergedTransaction(Transaction old, Transaction tx) {
+        Transaction lower = old.amount <= tx.amount ? old : tx;
+        Transaction higher = old.amount > tx.amount ? old : tx;
+        int original = Math.max(Math.max(old.originalAmount, tx.originalAmount), higher.amount);
+        int actual = Math.min(old.amount, tx.amount);
+        int discount = Math.max(Math.max(old.discountAmount, tx.discountAmount), original - actual);
+        String mergedRaw = safe(lower.raw);
+        if (!safe(higher.raw).isEmpty() && !compact(lower.raw).contains(compact(higher.raw))) {
+            mergedRaw += (mergedRaw.isEmpty() ? "" : "\n\n") + "原價通知：" + higher.raw;
+        }
+        mergedRaw += "\n\n系統辨識：可能使用點數 / 優惠折抵，原價 " + money(original) + "，折抵 " + money(discount) + "，實付 " + money(actual) + "。";
+        return new Transaction(
+                Math.min(old.timeMillis, tx.timeMillis),
+                actual,
+                original,
+                discount,
+                "expense",
+                !safe(lower.source).isEmpty() ? lower.source : old.source,
+                !safe(lower.merchant).isEmpty() ? lower.merchant : old.merchant,
+                !safe(lower.category).isEmpty() ? lower.category : old.category,
+                mergedRaw,
+                !safe(lower.hash).isEmpty() ? lower.hash : old.hash,
+                !safe(lower.icon).isEmpty() ? lower.icon : old.icon
+        );
+    }
+
+    private static boolean isLineBankWalletPair(String a, String b) {
+        boolean hasLine = "line_pay".equals(a) || "line_pay".equals(b);
+        boolean hasActualPay = "bank_card".equals(a) || "bank_card".equals(b) || "google_wallet".equals(a) || "google_wallet".equals(b) || "wallet".equals(a) || "wallet".equals(b);
+        return hasLine && hasActualPay;
+    }
+
+    private static boolean isInvoiceWithWalletBank(String a, String b) {
+        boolean hasInvoice = "invoice".equals(a) || "invoice".equals(b);
+        boolean hasActualPay = "bank_card".equals(a) || "bank_card".equals(b) || "google_wallet".equals(a) || "google_wallet".equals(b) || "line_pay".equals(a) || "line_pay".equals(b) || "wallet".equals(a) || "wallet".equals(b);
+        return hasInvoice && hasActualPay;
     }
 
     private static boolean looksDuplicate(Context context, List<Transaction> list, Transaction tx) {
@@ -147,12 +237,31 @@ public class TransactionStore {
         String x = merchantKey(a);
         String y = merchantKey(b);
         if (x.length() < 2 || y.length() < 2) return false;
-        return x.contains(y) || y.contains(x);
+        if (x.contains(y) || y.contains(x)) return true;
+        String shorter = x.length() <= y.length() ? x : y;
+        String longer = x.length() > y.length() ? x : y;
+        for (int len = Math.min(6, shorter.length()); len >= 3; len--) {
+            for (int i = 0; i + len <= shorter.length(); i++) {
+                String token = shorter.substring(i, i + len);
+                if (isMeaningfulToken(token) && longer.contains(token)) return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isMeaningfulToken(String token) {
+        if (token == null || token.length() < 3) return false;
+        if (token.matches("[0-9]+")) return false;
+        String t = token.toLowerCase(Locale.ROOT);
+        return !(t.contains("line") || t.contains("pay") || t.contains("nt") || t.contains("twd") || t.contains("通知") || t.contains("付款") || t.contains("消費") || t.contains("交易") || t.contains("金額"));
     }
 
     private static String merchantKey(String s) {
         String x = compact(s).toLowerCase(Locale.ROOT);
         x = x.replace("股份有限公司", "").replace("有限公司", "").replace("電子發票", "").replace("載具", "").replace("通知", "").replace("消費", "").replace("付款", "").replace("刷卡", "").replace("交易", "");
+        x = x.replace("linepay", "").replace("line", "").replace("pay", "").replace("google", "").replace("wallet", "").replace("錢包", "").replace("銀行", "").replace("信用卡", "");
+        x = x.replace("付款完成", "").replace("交易成功", "").replace("您有1張新發票進來囉", "").replace("總共花", "").replace("金額", "").replace("原價", "").replace("實付", "").replace("折抵", "");
+        x = x.replaceAll("[0-9]+", "");
         return x;
     }
 
@@ -378,11 +487,13 @@ public class TransactionStore {
 
     public static String exportCsv(Context context) {
         StringBuilder b = new StringBuilder();
-        b.append("時間,收入支出,金額,來源,店家/項目,分類,備註,原始內容\n");
+        b.append("時間,收入支出,實際金額,原價,折抵,來源,店家/項目,分類,備註,原始內容\n");
         for (Transaction t : getAll(context)) {
             b.append(csv(formatTime(t.timeMillis))).append(',')
                     .append(csv("income".equals(t.direction) ? "收入" : "支出")).append(',')
                     .append(t.amount).append(',')
+                    .append(t.originalAmount).append(',')
+                    .append(t.discountAmount).append(',')
                     .append(csv(t.source)).append(',')
                     .append(csv(t.merchant)).append(',')
                     .append(csv(t.category)).append(',')

@@ -10,8 +10,8 @@ android {
         applicationId 'com.enyu.autoledger'
         minSdk 26
         targetSdk 35
-        versionCode 21
-        versionName '1.0.0-v21-photo-widget-polish'
+        versionCode 23
+        versionName '1.0.0-v23-line-pay-points-dedupe'
     }
 
     signingConfigs {

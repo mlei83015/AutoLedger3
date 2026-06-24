@@ -1,6 +1,8 @@
 package com.enyu.autoledger;
 
 import java.security.MessageDigest;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -8,27 +10,41 @@ import java.util.regex.Pattern;
 public class FinanceParser {
     private static final Pattern[] AMOUNT_PATTERNS = new Pattern[]{
             Pattern.compile("(?:NT\\$|NTD|TWD|\\$|新臺幣|台幣|臺幣)\\s*([0-9,]+)", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("(?:金額|扣款|付款|支付|刷卡|消費|交易金額|消費金額|合計|共計)[:：]?\\s*(?:NT\\$|NTD|TWD|\\$)?\\s*([0-9,]+)", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("(?:金額|扣款|付款|支付|刷卡|消費|交易金額|消費金額|合計|共計|實付|實際付款|實際支付|折抵後|應付)[:：]?\\s*(?:NT\\$|NTD|TWD|\\$)?\\s*([0-9,]+)", Pattern.CASE_INSENSITIVE),
             Pattern.compile("([0-9,]+)\\s*元")
     };
+
+    private static final String ACTUAL_KEYS = "實付|實際付款|實際支付|實際扣款|折抵後|扣款金額|刷卡金額|已扣款|已刷卡|實收|支付金額|實際金額";
+    private static final String ORIGINAL_KEYS = "原價|原始金額|原金額|付款金額|消費金額|訂單金額|交易金額|商品金額|應付|總金額|小計|共計|合計";
+    private static final String DISCOUNT_KEYS = "點數折抵|LINE POINTS|Line Points|LINEPoints|點數|折抵|折扣|優惠券|優惠|折讓|抵用";
 
     public static Transaction parse(long timeMillis, String packageName, String appName, String title, String text) {
         String raw = join(appName, title, text).replace('，', ',');
         String normalized = raw.replace("　", " ").trim();
-        int amount = extractAmount(normalized);
+
+        AmountInfo info = analyzeAmounts(normalized);
+        int amount = info.actualAmount > 0 ? info.actualAmount : extractAmount(normalized);
         if (amount <= 0) return null;
 
         String direction = detectDirection(normalized, packageName, appName);
         if (direction == null) return null;
 
-        // V16：自動通知只抓「金額、方向、原始內容」，不要自動填分類與來源。
-        // 使用者可點紀錄進去修改分類 / 來源，避免 App 亂分類造成後續整理更麻煩。
-        // 去重判斷仍會讀 raw 內容，因此 LINE Pay / 載具 / Google 錢包 / 銀行同筆偵測不受影響。
+        // V16 起：自動通知先不自動填分類與來源，使用者可點紀錄進去修改。
+        // V23 起：如果通知本身有「原價 / 點數折抵 / 實付」，會把首頁與預算改用實付金額。
         String source = "";
         String merchant = "";
         String category = "";
+
+        String enrichedRaw = normalized;
+        if ("expense".equals(direction) && info.hasDiscountInfo()) {
+            enrichedRaw += "\n\n系統辨識：";
+            if (info.originalAmount > 0) enrichedRaw += "原價 $" + info.originalAmount + " ";
+            if (info.discountAmount > 0) enrichedRaw += "折抵 $" + info.discountAmount + " ";
+            enrichedRaw += "實付 $" + amount;
+        }
+
         String hash = sha256(packageName + "|" + title + "|" + text + "|" + amount + "|" + (timeMillis / 60000));
-        return new Transaction(timeMillis, amount, direction, source, merchant, category, normalized, hash);
+        return new Transaction(timeMillis, amount, info.originalAmount, info.discountAmount, direction, source, merchant, category, enrichedRaw, hash, "");
     }
 
     private static String join(String appName, String title, String text) {
@@ -51,6 +67,85 @@ public class FinanceParser {
             }
         }
         return 0;
+    }
+
+    private static AmountInfo analyzeAmounts(String s) {
+        AmountInfo info = new AmountInfo();
+        if (s == null) return info;
+
+        int actual = amountAfterKeys(s, ACTUAL_KEYS);
+        int original = amountAfterKeys(s, ORIGINAL_KEYS);
+        int discount = amountAfterKeys(s, DISCOUNT_KEYS);
+        List<Integer> all = allAmounts(s);
+
+        // 有些 LINE Pay 會寫「付款 30，點數折抵 5，實付 25」。這種直接抓實付。
+        if (actual > 0) info.actualAmount = actual;
+        if (original > 0) info.originalAmount = original;
+        if (discount > 0) info.discountAmount = discount;
+
+        // 如果有原價與折抵，但沒有明確實付，就自己算實付。
+        if (info.actualAmount <= 0 && info.originalAmount > 0 && info.discountAmount > 0 && info.originalAmount > info.discountAmount) {
+            info.actualAmount = info.originalAmount - info.discountAmount;
+        }
+
+        // 如果通知出現多個金額，而且有折抵字眼，通常最大值是原價，最小值是實付。
+        if (containsDiscountWord(s) && all.size() >= 2) {
+            int min = Integer.MAX_VALUE;
+            int max = 0;
+            for (int v : all) {
+                if (v <= 0) continue;
+                min = Math.min(min, v);
+                max = Math.max(max, v);
+            }
+            if (max > 0 && min < Integer.MAX_VALUE && max > min) {
+                if (info.originalAmount <= 0) info.originalAmount = max;
+                if (info.actualAmount <= 0) info.actualAmount = min;
+                if (info.discountAmount <= 0) info.discountAmount = max - min;
+            }
+        }
+
+        if (info.originalAmount > 0 && info.actualAmount > 0 && info.originalAmount > info.actualAmount && info.discountAmount <= 0) {
+            info.discountAmount = info.originalAmount - info.actualAmount;
+        }
+        return info;
+    }
+
+    private static boolean containsDiscountWord(String s) {
+        if (s == null) return false;
+        String upper = s.toUpperCase(Locale.ROOT);
+        return upper.contains("折抵") || upper.contains("折扣") || upper.contains("優惠") || upper.contains("POINT") || upper.contains("點數") || upper.contains("抵用");
+    }
+
+    private static int amountAfterKeys(String s, String keys) {
+        if (s == null) return 0;
+        Pattern p = Pattern.compile("(?:" + keys + ")[^0-9]{0,16}(?:NT\\$|NTD|TWD|\\$)?\\s*([0-9,]+)", Pattern.CASE_INSENSITIVE);
+        Matcher m = p.matcher(s);
+        if (m.find()) {
+            try { return Integer.parseInt(m.group(1).replace(",", "")); } catch (Exception ignored) { }
+        }
+        // 也支援「5 點折抵」這種金額在前面的寫法。
+        Pattern p2 = Pattern.compile("([0-9,]+)\\s*(?:元|點)?[^0-9]{0,10}(?:" + keys + ")", Pattern.CASE_INSENSITIVE);
+        Matcher m2 = p2.matcher(s);
+        if (m2.find()) {
+            try { return Integer.parseInt(m2.group(1).replace(",", "")); } catch (Exception ignored) { }
+        }
+        return 0;
+    }
+
+    private static List<Integer> allAmounts(String s) {
+        ArrayList<Integer> out = new ArrayList<>();
+        if (s == null) return out;
+        Pattern p = Pattern.compile("(?:(?:NT\\$|NTD|TWD|\\$)\\s*([0-9,]{1,7})|([0-9,]{1,7})\\s*(?:元|點))", Pattern.CASE_INSENSITIVE);
+        Matcher m = p.matcher(s);
+        while (m.find()) {
+            try {
+                String g = m.group(1) != null ? m.group(1) : m.group(2);
+                int v = Integer.parseInt(g.replace(",", ""));
+                // 排除時間、日期、載具號碼中太短或太怪的數字。1~999999 都保留，因為點數可能很小。
+                if (v > 0 && v < 1000000) out.add(v);
+            } catch (Exception ignored) { }
+        }
+        return out;
     }
 
     private static String detectDirection(String s, String packageName, String appName) {
@@ -111,6 +206,15 @@ public class FinanceParser {
             return sb.toString();
         } catch (Exception e) {
             return String.valueOf(input.hashCode());
+        }
+    }
+
+    private static class AmountInfo {
+        int actualAmount;
+        int originalAmount;
+        int discountAmount;
+        boolean hasDiscountInfo() {
+            return originalAmount > 0 || discountAmount > 0;
         }
     }
 }

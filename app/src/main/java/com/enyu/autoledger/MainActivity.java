@@ -1564,7 +1564,7 @@ public class MainActivity extends Activity {
 
 
     private void showWidgetInfoDialog() {
-        showRoundedInfoDialog("桌面小工具", "V22 有三種桌面小工具：\n\n1. 簡易記帳小工具：顯示餘額、今日花費，點「支出／收入」快速新增。\n\n2. 載具＋記帳小工具：顯示載具條碼、餘額、今日花費、輸入金額入口。\n\n3. 圖片＋載具＋記帳小工具：最上方顯示你裁切好的圖片，中間顯示載具條碼，下方顯示餘額與支出 / 收入。點小工具圖片可回到 App 修改圖片。", "知道了", null, "圖片設定", v -> showWidgetImageSettingsDialog());
+        showRoundedInfoDialog("桌面小工具", "V23 有三種桌面小工具：\n\n1. 簡易記帳小工具：顯示餘額、今日花費，點「支出／收入」快速新增。\n\n2. 載具＋記帳小工具：顯示載具條碼、餘額、今日花費、輸入金額入口。\n\n3. 圖片＋載具＋記帳小工具：最上方顯示你裁切好的圖片，中間顯示載具條碼，下方顯示餘額與支出 / 收入。點小工具圖片可回到 App 修改圖片。", "知道了", null, "圖片設定", v -> showWidgetImageSettingsDialog());
     }
 
 
@@ -1969,7 +1969,7 @@ public class MainActivity extends Activity {
         advanced.addView(featureRow("月底預估花費", "依照目前花費速度推估月底可能花多少"));
         box.addView(advanced);
 
-        TextView version = text("AutoLedger V22", 12, MUTED, false);
+        TextView version = text("AutoLedger V23", 12, MUTED, false);
         version.setGravity(Gravity.CENTER);
         version.setPadding(0, dp(16), 0, dp(10));
         box.addView(version);
@@ -2212,7 +2212,7 @@ public class MainActivity extends Activity {
     }
 
     private void showOnboarding() {
-        showRoundedInfoDialog("歡迎使用自動記帳 V22", "這版新增 / 優化：\n\n1. 圖片小工具照片改成圓角裁切，貼齊背景卡片。\n2. 載具條碼圖片只顯示條碼，號碼另外顯示，避免被壓扁。\n3. 手動新增頁縮小版面，不用往下滑就能看到確認新增。\n4. 備註改成點開填寫，快速常用項目改成橫向滑動。\n5. 防重複、CSV、備份、還原、清除資料都保留。", "我知道了", v -> AppSettings.setBool(this, AppSettings.KEY_ONBOARDED, true), "通知用途", v -> showNotificationPurpose());
+        showRoundedInfoDialog("歡迎使用自動記帳 V23", "這版新增 / 優化：\n\n1. LINE Pay 通知若有原價、點數折抵、實付金額，會優先用實付金額記帳。\n2. LINE Pay 原價通知與銀行 / Google 錢包實扣通知金額不同時，會自動合併成同一筆。\n3. 紀錄詳情會顯示原價、折抵與實際支出。\n4. 防重複、桌面小工具、CSV、備份、還原都保留。", "我知道了", v -> AppSettings.setBool(this, AppSettings.KEY_ONBOARDED, true), "通知用途", v -> showNotificationPurpose());
     }
 
     private void showNotificationPurpose() {
@@ -2399,7 +2399,13 @@ public class MainActivity extends Activity {
         panel.addView(text("紀錄詳情", 21, TEXT, true));
         panel.addView(text("點修改可以調整分類、來源、備註與圖標。", 12, MUTED, false), marginLp(-1, -2, 0, dp(2), 0, dp(12)));
         panel.addView(detailLine("類型", "income".equals(tx.direction) ? "收入" : "支出"));
-        panel.addView(detailLine("金額", TransactionStore.money(tx.amount)));
+        panel.addView(detailLine("實際金額", TransactionStore.money(tx.amount)));
+        if (tx.originalAmount > 0 && tx.originalAmount != tx.amount) {
+            panel.addView(detailLine("原價", TransactionStore.money(tx.originalAmount)));
+        }
+        if (tx.discountAmount > 0) {
+            panel.addView(detailLine("折抵 / 點數", "- " + TransactionStore.money(tx.discountAmount)));
+        }
         panel.addView(detailLine("分類", cleanCategory(tx.category).isEmpty() ? "未分類" : cleanCategory(tx.category)));
         panel.addView(detailLine("來源 / 店家", empty(tx.merchant) ? "可留空" : tx.merchant));
         panel.addView(detailLine("通知來源", empty(tx.source) ? "自動通知" : tx.source));

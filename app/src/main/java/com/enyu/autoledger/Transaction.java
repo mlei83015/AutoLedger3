@@ -5,7 +5,9 @@ import org.json.JSONObject;
 
 public class Transaction {
     public long timeMillis;
-    public int amount;
+    public int amount;          // 實際會影響餘額 / 預算的金額
+    public int originalAmount;  // 通知上的原價 / 原始金額，沒有就 0
+    public int discountAmount;  // 點數 / 優惠 / 折抵金額，沒有就 0
     public String direction; // expense / income
     public String source;
     public String merchant;
@@ -19,8 +21,14 @@ public class Transaction {
     }
 
     public Transaction(long timeMillis, int amount, String direction, String source, String merchant, String category, String raw, String hash, String icon) {
+        this(timeMillis, amount, 0, 0, direction, source, merchant, category, raw, hash, icon);
+    }
+
+    public Transaction(long timeMillis, int amount, int originalAmount, int discountAmount, String direction, String source, String merchant, String category, String raw, String hash, String icon) {
         this.timeMillis = timeMillis;
         this.amount = amount;
+        this.originalAmount = Math.max(0, originalAmount);
+        this.discountAmount = Math.max(0, discountAmount);
         this.direction = direction;
         this.source = source == null ? "" : source;
         this.merchant = merchant == null ? "" : merchant;
@@ -34,6 +42,8 @@ public class Transaction {
         JSONObject o = new JSONObject();
         o.put("timeMillis", timeMillis);
         o.put("amount", amount);
+        o.put("originalAmount", originalAmount);
+        o.put("discountAmount", discountAmount);
         o.put("direction", direction);
         o.put("source", source);
         o.put("merchant", merchant);
@@ -48,6 +58,8 @@ public class Transaction {
         return new Transaction(
                 o.optLong("timeMillis"),
                 o.optInt("amount"),
+                o.optInt("originalAmount", 0),
+                o.optInt("discountAmount", 0),
                 o.optString("direction", "expense"),
                 o.optString("source", ""),
                 o.optString("merchant", ""),
