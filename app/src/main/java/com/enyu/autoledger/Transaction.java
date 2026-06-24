@@ -12,16 +12,22 @@ public class Transaction {
     public String category;
     public String raw;
     public String hash;
+    public String icon;
 
     public Transaction(long timeMillis, int amount, String direction, String source, String merchant, String category, String raw, String hash) {
+        this(timeMillis, amount, direction, source, merchant, category, raw, hash, "");
+    }
+
+    public Transaction(long timeMillis, int amount, String direction, String source, String merchant, String category, String raw, String hash, String icon) {
         this.timeMillis = timeMillis;
         this.amount = amount;
         this.direction = direction;
         this.source = source == null ? "" : source;
         this.merchant = merchant == null ? "" : merchant;
-        this.category = category == null ? "未分類" : category;
+        this.category = category == null ? "" : category;
         this.raw = raw == null ? "" : raw;
         this.hash = hash == null ? "" : hash;
+        this.icon = icon == null ? "" : icon;
     }
 
     public JSONObject toJson() throws JSONException {
@@ -34,6 +40,7 @@ public class Transaction {
         o.put("category", category);
         o.put("raw", raw);
         o.put("hash", hash);
+        o.put("icon", icon);
         return o;
     }
 
@@ -44,9 +51,10 @@ public class Transaction {
                 o.optString("direction", "expense"),
                 o.optString("source", ""),
                 o.optString("merchant", ""),
-                o.optString("category", "未分類"),
+                o.optString("category", ""),
                 o.optString("raw", ""),
-                o.optString("hash", "")
+                o.optString("hash", ""),
+                o.optString("icon", "")
         );
     }
 }

@@ -21,7 +21,7 @@ public class FinanceParser {
         String direction = detectDirection(normalized, packageName, appName);
         if (direction == null) return null;
 
-        // V15：自動通知只抓「金額、方向、原始內容」，不要自動填分類與來源。
+        // V16：自動通知只抓「金額、方向、原始內容」，不要自動填分類與來源。
         // 使用者可點紀錄進去修改分類 / 來源，避免 App 亂分類造成後續整理更麻煩。
         // 去重判斷仍會讀 raw 內容，因此 LINE Pay / 載具 / Google 錢包 / 銀行同筆偵測不受影響。
         String source = "";

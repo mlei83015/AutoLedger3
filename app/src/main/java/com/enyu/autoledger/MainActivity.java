@@ -118,7 +118,7 @@ public class MainActivity extends Activity {
         nav.setOrientation(LinearLayout.HORIZONTAL);
         nav.setGravity(Gravity.CENTER);
         nav.setPadding(dp(8), dp(6), dp(8), dp(8));
-        nav.setBackgroundColor(AppSettings.getBool(this, AppSettings.KEY_DARK_MODE, false) ? 0xFF111923 : 0xFFFFFFFF);
+        nav.setBackgroundColor(isDarkMode() ? 0xFF111923 : 0xFFFFFFFF);
         root.addView(nav, new LinearLayout.LayoutParams(-1, -2));
         setContentView(root);
     }
@@ -150,8 +150,13 @@ public class MainActivity extends Activity {
         return (LinearLayout) scroll.getChildAt(0);
     }
 
+    private boolean isDarkMode() {
+        boolean systemDark = (getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+        return AppSettings.getBool(this, AppSettings.KEY_DARK_MODE, systemDark);
+    }
+
     private void applyModeColors() {
-        boolean dark = AppSettings.getBool(this, AppSettings.KEY_DARK_MODE, false);
+        boolean dark = isDarkMode();
         if (dark) {
             BG = 0xFF0E141B;
             CARD = 0xFF17202A;
@@ -179,10 +184,10 @@ public class MainActivity extends Activity {
         try {
             Window w = getWindow();
             w.setStatusBarColor(BG);
-            w.setNavigationBarColor(AppSettings.getBool(this, AppSettings.KEY_DARK_MODE, false) ? 0xFF111923 : 0xFFFFFFFF);
+            w.setNavigationBarColor(isDarkMode() ? 0xFF111923 : 0xFFFFFFFF);
             if (Build.VERSION.SDK_INT >= 23) {
                 int flags = w.getDecorView().getSystemUiVisibility();
-                if (AppSettings.getBool(this, AppSettings.KEY_DARK_MODE, false)) {
+                if (isDarkMode()) {
                     flags &= ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
                 } else {
                     flags |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
@@ -304,7 +309,7 @@ public class MainActivity extends Activity {
         int budget = Math.max(1, AppSettings.getMonthlyBudget(this));
         int remaining = Math.max(0, budget - monthExpense);
         DonutChartView donut = new DonutChartView(this);
-        donut.setDarkMode(AppSettings.getBool(this, AppSettings.KEY_DARK_MODE, false));
+        donut.setDarkMode(isDarkMode());
         donut.setData(monthExpense, remaining, 0, AppSettings.getPalette(this));
         chartCard.addView(donut, new LinearLayout.LayoutParams(dp(150), dp(150)));
         LinearLayout legend = new LinearLayout(this);
@@ -330,7 +335,7 @@ public class MainActivity extends Activity {
 
         LinearLayout studentTip = card();
         studentTip.setPadding(dp(14), dp(10), dp(14), dp(10));
-        studentTip.setBackground(round(AppSettings.getBool(this, AppSettings.KEY_DARK_MODE, false) ? 0xFF1B2735 : 0xFFFFF4E8, dp(16), BORDER));
+        studentTip.setBackground(round(isDarkMode() ? 0xFF1B2735 : 0xFFFFF4E8, dp(16), BORDER));
         int forecastHome = TransactionStore.forecastMonthExpense(this);
         int savingHome = TransactionStore.suggestedSaving(this);
         studentTip.addView(text("✨ 本月小提醒", 15, TEXT, true));
@@ -342,7 +347,7 @@ public class MainActivity extends Activity {
         monthCountCard.setOrientation(LinearLayout.HORIZONTAL);
         monthCountCard.setGravity(Gravity.CENTER_VERTICAL);
         monthCountCard.setPadding(dp(14), dp(10), dp(14), dp(10));
-        monthCountCard.setBackground(round(AppSettings.getBool(this, AppSettings.KEY_DARK_MODE, false) ? 0xFF151F2A : 0xFFFFFFFF, dp(16), BORDER));
+        monthCountCard.setBackground(round(isDarkMode() ? 0xFF151F2A : 0xFFFFFFFF, dp(16), BORDER));
         int monthTotalCount = TransactionStore.countBetween(this, TransactionStore.startOfMonth(0), TransactionStore.startOfMonth(1));
         int monthAutoCount = TransactionStore.autoCountBetween(this, TransactionStore.startOfMonth(0), TransactionStore.startOfMonth(1));
         int monthManualCount = TransactionStore.manualCountBetween(this, TransactionStore.startOfMonth(0), TransactionStore.startOfMonth(1));
@@ -405,8 +410,9 @@ public class MainActivity extends Activity {
         row.setMinimumHeight(dp(72));
 
         boolean income = "income".equals(tx.direction);
-        int iconBg = income ? 0xFFEAF8F0 : (isInvoiceRecord(tx) ? 0xFFEAF8FF : 0xFFFFF0F1);
-        TextView ic = text(income ? "💰" : iconFor(tx.category), 22, TEXT, false);
+        String rowIcon = !empty(tx.icon) ? tx.icon : (income ? "💰" : iconFor(tx.category));
+        int iconBg = iconBgFor(tx);
+        TextView ic = text(rowIcon, 22, TEXT, false);
         ic.setGravity(Gravity.CENTER);
         ic.setBackground(round(iconBg, dp(16)));
         row.addView(ic, new LinearLayout.LayoutParams(dp(48), dp(48)));
@@ -442,20 +448,17 @@ public class MainActivity extends Activity {
 
     private String recordTitle(Transaction tx) {
         if (tx == null) return "記帳紀錄";
-        String source = compactForUi(tx.source + " " + tx.merchant + " " + tx.raw);
+        String cat = cleanCategory(tx.category);
+        if (!cat.isEmpty()) return trimUi(cat, 12);
         String merchant = tx.merchant == null ? "" : tx.merchant.trim();
-        if (source.contains("發票") || source.contains("載具")) return "發票載具";
-        if (source.toLowerCase(Locale.ROOT).contains("line") || source.contains("LINE錢包")) return "LINE錢包";
-        if (source.toLowerCase(Locale.ROOT).contains("google") || source.contains("Google錢包")) return "Google 錢包";
-        if (source.contains("銀行") || source.contains("信用卡") || source.contains("刷卡")) return "銀行刷卡";
-        if (!merchant.isEmpty()) return trimUi(merchant, 12);
-        if (tx.category != null && !tx.category.trim().isEmpty()) return trimUi(tx.category, 12);
-        return "記帳紀錄";
+        if (!merchant.isEmpty() && !looksLikeAutoSourceName(merchant)) return trimUi(merchant, 12);
+        return "未分類";
     }
 
     private String recordSubtitle(Transaction tx) {
         if (tx == null) return "";
-        String type = (tx.category == null || tx.category.trim().isEmpty()) ? "未分類" : tx.category.trim();
+        String type = cleanCategory(tx.category);
+        if (type.isEmpty()) type = "未分類";
         String source = sourceDisplay(tx);
         String note = compactForUi(tx.raw);
         if (note.length() > 0) {
@@ -467,14 +470,22 @@ public class MainActivity extends Activity {
     }
 
     private String sourceDisplay(Transaction tx) {
-        String all = compactForUi(tx.source + " " + tx.merchant + " " + tx.raw).toLowerCase(Locale.ROOT);
-        if (all.contains("發票") || all.contains("載具") || all.contains("invoice")) return "載具自動記帳";
-        if (all.contains("line") && (all.contains("pay") || all.contains("錢包"))) return "LINE Pay";
-        if (all.contains("google") || all.contains("wallet")) return "Google 錢包";
-        if (all.contains("銀行") || all.contains("刷卡") || all.contains("信用卡")) return "銀行通知";
+        if (tx == null) return "";
         if (tx.hash != null && tx.hash.startsWith("manual-")) return "手動新增";
-        if (tx.source != null && !tx.source.trim().isEmpty()) return trimUi(tx.source.trim(), 10);
-        return "自動記帳";
+        String stored = compactForUi((tx.source == null ? "" : tx.source) + " " + (tx.merchant == null ? "" : tx.merchant));
+        if (stored.isEmpty()) return "自動通知";
+        return trimUi(stored, 10);
+    }
+
+    private String cleanCategory(String c) {
+        String x = c == null ? "" : c.trim();
+        if (x.equals("未分類")) return "";
+        return x;
+    }
+
+    private boolean looksLikeAutoSourceName(String s) {
+        String x = compactForUi(s).toLowerCase(Locale.ROOT);
+        return x.contains("line") || x.contains("載具") || x.contains("發票") || x.contains("google") || x.contains("銀行") || x.contains("wallet") || x.contains("通知");
     }
 
     private boolean isInvoiceRecord(Transaction tx) {
@@ -494,12 +505,34 @@ public class MainActivity extends Activity {
         return x.substring(0, Math.max(0, max)) + "…";
     }
 
+    private int iconBgFor(Transaction tx) {
+        boolean income = tx != null && "income".equals(tx.direction);
+        String c = tx == null ? "" : tx.category;
+        if (income) return isDarkMode() ? 0xFF183326 : 0xFFEAF8F0;
+        if (c == null || c.trim().isEmpty() || c.equals("未分類")) return isDarkMode() ? 0xFF24303D : 0xFFEAF8FF;
+        if (c.contains("餐") || c.contains("飲") || c.contains("茶") || c.contains("咖啡")) return isDarkMode() ? 0xFF332529 : 0xFFFFF0F1;
+        if (c.contains("交通") || c.contains("捷運") || c.contains("停車") || c.contains("加油")) return isDarkMode() ? 0xFF1F3142 : 0xFFEAF4FF;
+        if (c.contains("遊戲") || c.contains("娛樂")) return isDarkMode() ? 0xFF2D2843 : 0xFFF2EFFF;
+        if (c.contains("禮物") || c.contains("紅包")) return isDarkMode() ? 0xFF3A2732 : 0xFFFFEEF7;
+        if (c.contains("購") || c.contains("超商") || c.contains("用品")) return isDarkMode() ? 0xFF263326 : 0xFFEFF9EF;
+        return isDarkMode() ? 0xFF263140 : 0xFFF1F7FF;
+    }
+
     private String iconFor(String cat) {
         String c = cat == null ? "" : cat;
-        if (c.contains("餐") || c.contains("飲") || c.contains("超商")) return "🍴";
-        if (c.contains("交通") || c.contains("捷運") || c.contains("停車")) return "🚌";
+        if (c.contains("茶") || c.contains("飲料") || c.contains("咖啡")) return "🥤";
+        if (c.contains("餐") || c.contains("早餐") || c.contains("午餐") || c.contains("晚餐")) return "🍴";
+        if (c.contains("交通") || c.contains("捷運") || c.contains("停車") || c.contains("加油")) return "🚌";
+        if (c.contains("超商")) return "🏪";
         if (c.contains("購") || c.contains("用品")) return "🛍";
-        if (c.contains("訂閱") || c.contains("娛樂")) return "▶";
+        if (c.contains("訂閱")) return "▶";
+        if (c.contains("遊戲") || c.contains("娛樂")) return "🎮";
+        if (c.contains("禮物") || c.contains("紅包")) return "🎁";
+        if (c.contains("醫") || c.contains("藥")) return "💊";
+        if (c.contains("學") || c.contains("書")) return "📚";
+        if (c.contains("旅")) return "✈️";
+        if (c.contains("運動") || c.contains("健身")) return "🏋️";
+        if (c.contains("薪") || c.contains("收入") || c.contains("打工") || c.contains("零用錢")) return "💰";
         return "🧾";
     }
 
@@ -750,7 +783,7 @@ public class MainActivity extends Activity {
 
         LinearLayout typeTabs = new LinearLayout(this);
         typeTabs.setOrientation(LinearLayout.HORIZONTAL);
-        typeTabs.setBackground(round(AppSettings.getBool(this, AppSettings.KEY_DARK_MODE, false) ? 0xFF202933 : 0xFFF2F3F5, dp(18), BORDER));
+        typeTabs.setBackground(round(isDarkMode() ? 0xFF202933 : 0xFFF2F3F5, dp(18), BORDER));
         typeTabs.addView(reportTab("支出", "expense".equals(reportType), () -> { reportType = "expense"; showStats(); }), marginLp(0, dp(54), 0, 0, dp(5), 0, 1));
         typeTabs.addView(reportTab("收入", "income".equals(reportType), () -> { reportType = "income"; showStats(); }), marginLp(0, dp(54), dp(5), 0, dp(5), 0, 1));
         typeTabs.addView(reportTab("結餘", "balance".equals(reportType), () -> { reportType = "balance"; showStats(); }), marginLp(0, dp(54), dp(5), 0, 0, 0, 1));
@@ -809,7 +842,7 @@ public class MainActivity extends Activity {
         LinearLayout chartCard = card();
         chartCard.setGravity(Gravity.CENTER);
         DonutChartView donut = new DonutChartView(this);
-        donut.setDarkMode(AppSettings.getBool(this, AppSettings.KEY_DARK_MODE, false));
+        donut.setDarkMode(isDarkMode());
         donut.setCenterLabel(centerLabel);
         donut.setData(mainValue, remainValue, 0, AppSettings.getPalette(this));
         chartCard.addView(donut, new LinearLayout.LayoutParams(dp(230), dp(230)));
@@ -899,7 +932,7 @@ public class MainActivity extends Activity {
     }
 
     private Button rangeChip(String s, boolean selected, final Runnable click) {
-        Button b = smallChip(s, selected ? 0xFFFFCC55 : (AppSettings.getBool(this, AppSettings.KEY_DARK_MODE, false) ? 0xFF1B2530 : 0xFFF7F7F8), selected ? 0xFF1F2329 : TEXT);
+        Button b = smallChip(s, selected ? 0xFFFFCC55 : (isDarkMode() ? 0xFF1B2530 : 0xFFF7F7F8), selected ? 0xFF1F2329 : TEXT);
         b.setTextSize(14);
         b.setTypeface(Typeface.DEFAULT_BOLD);
         b.setOnClickListener(v -> { if (click != null) click.run(); });
@@ -911,22 +944,22 @@ public class MainActivity extends Activity {
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(dp(20), dp(18), dp(20), dp(18));
-        panel.setBackground(round(AppSettings.getBool(this, AppSettings.KEY_DARK_MODE, false) ? 0xFF1E242D : 0xFFFFFFFF, dp(20), BORDER));
+        panel.setBackground(round(isDarkMode() ? 0xFF1E242D : 0xFFFFFFFF, dp(20), BORDER));
 
         LinearLayout closeRow = new LinearLayout(this);
         closeRow.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
         TextView close = text("✕", 22, MUTED, true);
         close.setGravity(Gravity.CENTER);
-        close.setBackground(round(AppSettings.getBool(this, AppSettings.KEY_DARK_MODE, false) ? 0xFF2A333F : 0xFFF2F2F2, dp(18), BORDER));
+        close.setBackground(round(isDarkMode() ? 0xFF2A333F : 0xFFF2F2F2, dp(18), BORDER));
         close.setOnClickListener(v -> closeDialogs());
         closeRow.addView(close, new LinearLayout.LayoutParams(dp(42), dp(42)));
         panel.addView(closeRow, marginLp(-1, -2, 0, 0, 0, dp(4)));
 
         LinearLayout profile = new LinearLayout(this);
         profile.setGravity(Gravity.CENTER_VERTICAL);
-        TextView avatar = text("●", 48, AppSettings.getBool(this, AppSettings.KEY_DARK_MODE, false) ? 0xFFFFFFFF : 0xFF222222, true);
+        TextView avatar = text("●", 48, isDarkMode() ? 0xFFFFFFFF : 0xFF222222, true);
         avatar.setGravity(Gravity.CENTER);
-        avatar.setBackground(round(AppSettings.getBool(this, AppSettings.KEY_DARK_MODE, false) ? 0xFF2A333F : 0xFFF2F2F2, dp(42), BORDER));
+        avatar.setBackground(round(isDarkMode() ? 0xFF2A333F : 0xFFF2F2F2, dp(42), BORDER));
         profile.addView(avatar, new LinearLayout.LayoutParams(dp(78), dp(78)));
         LinearLayout info = new LinearLayout(this);
         info.setOrientation(LinearLayout.VERTICAL);
@@ -974,7 +1007,7 @@ public class MainActivity extends Activity {
     }
 
     private View sideMenuButton(String icon, String label, View.OnClickListener listener) {
-        Button b = smallChip(icon + "   " + label, AppSettings.getBool(this, AppSettings.KEY_DARK_MODE, false) ? 0xFF222A34 : 0xFFF7F7F8, TEXT);
+        Button b = smallChip(icon + "   " + label, isDarkMode() ? 0xFF222A34 : 0xFFF7F7F8, TEXT);
         b.setTextSize(16);
         b.setGravity(Gravity.CENTER_VERTICAL);
         b.setPadding(dp(18), 0, dp(18), 0);
@@ -1001,59 +1034,62 @@ public class MainActivity extends Activity {
     }
 
     private void showCarrierBarcodeDialog() {
-        final EditText input = new EditText(this);
-        input.setHint("例如：/AB12CDE");
+        final AlertDialog dialog = new AlertDialog.Builder(this).create();
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(20), dp(18), dp(20), dp(14));
+        panel.setBackground(round(CARD, dp(26), BORDER));
+        panel.addView(text("設定載具條碼", 21, TEXT, true), marginLp(-1, -2, 0, 0, 0, dp(8)));
+        panel.addView(text("不用綁定財政部帳號。只要輸入手機條碼號碼，App 會在桌面小工具產生條碼，方便結帳時掃描。", 14, TEXT, false));
+        TextView warn = text("注意：這只是顯示條碼，不會自動登入載具或查發票。", 13, MUTED, false);
+        warn.setPadding(0, dp(8), 0, dp(8));
+        panel.addView(warn);
+        final EditText input = edit("例如：/AB12CDE", false);
         input.setSingleLine(true);
         input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS);
         input.setText(BarcodeUtil.normalizeCarrier(AppSettings.getString(this, AppSettings.KEY_CARRIER_BARCODE, "")));
         input.setSelectAllOnFocus(true);
         input.setTextSize(18);
-        input.setPadding(dp(14), 0, dp(14), 0);
-        input.setTextColor(0xFF1F2933);
-        input.setHintTextColor(0xFF8A96A3);
-        input.setBackground(round(0xFFF8FBFF, dp(12), 0xFFD6EAF5));
-
-        LinearLayout panel = new LinearLayout(this);
-        panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(4), dp(2), dp(4), 0);
-        panel.addView(text("不用綁定財政部帳號。只要輸入手機條碼號碼，App 會在桌面小工具產生條碼，方便結帳時掃描。", 14, 0xFF27323A, false));
-        TextView warn = text("注意：這只是顯示條碼，不會自動登入載具或查發票。", 13, 0xFF6A7680, false);
-        warn.setPadding(0, dp(8), 0, dp(8));
-        panel.addView(warn);
-        panel.addView(input, marginLp(-1, dp(48), 0, dp(4), 0, 0));
-
-        new AlertDialog.Builder(this)
-                .setTitle("設定載具條碼")
-                .setView(panel)
-                .setNegativeButton("取消", null)
-                .setNeutralButton("清除", (d, w) -> {
-                    AppSettings.setString(this, AppSettings.KEY_CARRIER_BARCODE, "");
-                    try { CarrierBalanceWidgetProvider.updateAll(this); } catch (Exception ignored) { }
-                    Toast.makeText(this, "已清除載具條碼", Toast.LENGTH_SHORT).show();
-                    showSettings();
-                })
-                .setPositiveButton("儲存", (d, w) -> {
-                    String code = BarcodeUtil.normalizeCarrier(input.getText().toString());
-                    if (code.length() < 5) {
-                        Toast.makeText(this, "載具號碼看起來太短，請確認後再儲存", Toast.LENGTH_LONG).show();
-                        return;
-                    }
-                    AppSettings.setString(this, AppSettings.KEY_CARRIER_BARCODE, code);
-                    try { CarrierBalanceWidgetProvider.updateAll(this); } catch (Exception ignored) { }
-                    Toast.makeText(this, "已儲存載具條碼，點桌面條碼可複製", Toast.LENGTH_SHORT).show();
-                    showSettings();
-                })
-                .show();
+        panel.addView(input, marginLp(-1, dp(52), 0, dp(4), 0, dp(14)));
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        Button clear = pill("清除", CHIP, GREEN);
+        Button cancel = pill("取消", CHIP, TEXT);
+        Button save = bigSave("儲存");
+        actions.addView(clear, marginLp(0, dp(48), 0, 0, dp(4), 0, 1));
+        actions.addView(cancel, marginLp(0, dp(48), dp(4), 0, dp(4), 0, 1));
+        actions.addView(save, marginLp(0, dp(48), dp(4), 0, 0, 0, 1));
+        panel.addView(actions);
+        clear.setOnClickListener(v -> {
+            AppSettings.setString(this, AppSettings.KEY_CARRIER_BARCODE, "");
+            try { CarrierBalanceWidgetProvider.updateAll(this); } catch (Exception ignored) { }
+            Toast.makeText(this, "已清除載具條碼", Toast.LENGTH_SHORT).show();
+            dialog.dismiss();
+            showSettings();
+        });
+        cancel.setOnClickListener(v -> dialog.dismiss());
+        save.setOnClickListener(v -> {
+            String code = BarcodeUtil.normalizeCarrier(input.getText().toString());
+            if (code.length() < 5) {
+                Toast.makeText(this, "載具號碼看起來太短，請確認後再儲存", Toast.LENGTH_LONG).show();
+                return;
+            }
+            AppSettings.setString(this, AppSettings.KEY_CARRIER_BARCODE, code);
+            try { CarrierBalanceWidgetProvider.updateAll(this); } catch (Exception ignored) { }
+            Toast.makeText(this, "已儲存載具條碼，點桌面條碼可複製", Toast.LENGTH_SHORT).show();
+            dialog.dismiss();
+            showSettings();
+        });
+        dialog.setView(panel);
+        dialog.setOnShowListener(d -> { if (dialog.getWindow() != null) dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)); });
+        dialog.show();
     }
+
 
     private void showWidgetInfoDialog() {
-        new AlertDialog.Builder(this)
-                .setTitle("桌面小工具")
-                .setMessage("V12 有兩種桌面小工具：\n\n1. 簡易記帳小工具：顯示餘額、今日花費，點「支出／收入」快速新增。\n\n2. 載具＋記帳小工具：上方只顯示一個載具條碼，點條碼可以複製載具號碼，下方顯示餘額與快速新增。\n\nAndroid 桌面小工具不能直接放真正的打字輸入框，所以小工具上的「點我輸入金額」會打開一個很小的快速新增視窗，不會進到完整 App。")
-                .setPositiveButton("知道了", null)
-                .setNeutralButton("設定載具", (d, w) -> showCarrierBarcodeDialog())
-                .show();
+        showRoundedInfoDialog("桌面小工具", "V16 有兩種桌面小工具：\n\n1. 簡易記帳小工具：顯示餘額、今日花費，點「支出／收入」快速新增。\n\n2. 載具＋記帳小工具：上方只顯示一個載具條碼，點條碼可以複製載具號碼，下方顯示餘額與快速新增。\n\nAndroid 桌面小工具不能直接放真正的打字輸入框，所以小工具上的「點我輸入金額」會打開一個很小的快速新增視窗。", "知道了", null, "設定載具", v -> showCarrierBarcodeDialog());
     }
+
 
     private View dialogSwitchRow(String title, String subtitle, String key, boolean def) {
         LinearLayout row = new LinearLayout(this);
@@ -1062,8 +1098,8 @@ public class MainActivity extends Activity {
         row.setPadding(dp(6), dp(8), dp(2), dp(8));
         LinearLayout texts = new LinearLayout(this);
         texts.setOrientation(LinearLayout.VERTICAL);
-        texts.addView(text(title, 16, 0xFF1F2933, true));
-        texts.addView(text(subtitle, 12, 0xFF66727E, false));
+        texts.addView(text(title, 16, TEXT, true));
+        texts.addView(text(subtitle, 12, MUTED, false));
         row.addView(texts, new LinearLayout.LayoutParams(0, -2, 1));
         Switch sw = new Switch(this);
         sw.setChecked(AppSettings.getBool(this, key, def));
@@ -1073,50 +1109,53 @@ public class MainActivity extends Activity {
     }
 
     private void showNotificationSettingsDialog() {
+        final AlertDialog dialog = new AlertDialog.Builder(this).create();
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(6), dp(2), dp(6), dp(4));
-        panel.setBackgroundColor(0xFFFFFFFF);
-
-        panel.addView(text("通知開關", 17, 0xFF1F2933, true));
+        panel.setPadding(dp(20), dp(18), dp(20), dp(14));
+        panel.setBackground(round(CARD, dp(26), BORDER));
+        panel.addView(text("鈴鐺通知設定", 21, TEXT, true), marginLp(-1, -2, 0, 0, 0, dp(8)));
+        panel.addView(text("通知開關", 15, TEXT, true));
         panel.addView(dialogSwitchRow("每日昨日花費摘要", "每天固定時間提醒你昨天花多少", AppSettings.KEY_NOTIFY_DAILY, true));
         panel.addView(dialogSwitchRow("自動記帳完成通知", "每記到一筆就跳小通知", AppSettings.KEY_NOTIFY_AUTO_SAVED, true));
         panel.addView(dialogSwitchRow("預算提醒", "接近或超過本月預算時提醒", AppSettings.KEY_NOTIFY_BUDGET, true));
         panel.addView(dialogSwitchRow("重複資料提醒", "偵測到疑似同一筆時提醒你", AppSettings.KEY_NOTIFY_DUPLICATE, false));
 
-        final EditText time = new EditText(this);
-        time.setHint("09:00");
+        final EditText time = edit("09:00", false);
         time.setText(AppSettings.getString(this, AppSettings.KEY_DAILY_NOTIFY_TIME, "09:00"));
         time.setSingleLine(true);
         time.setTextSize(18);
         time.setInputType(InputType.TYPE_CLASS_TEXT);
-        time.setTextColor(0xFF1F2933);
-        time.setHintTextColor(0xFF8A96A3);
-        time.setPadding(dp(12), 0, dp(12), 0);
-        time.setBackground(round(0xFFF8FBFF, dp(12), 0xFFD6EAF5));
-        TextView timeLabel = text("每日摘要通知時間（24 小時制）", 14, 0xFF1F2933, true);
+        TextView timeLabel = text("每日摘要通知時間（24 小時制）", 14, TEXT, true);
         timeLabel.setPadding(0, dp(8), 0, dp(4));
         panel.addView(timeLabel);
-        panel.addView(time, marginLp(-1, dp(50), 0, dp(2), 0, dp(8)));
+        panel.addView(time, marginLp(-1, dp(52), 0, dp(2), 0, dp(8)));
+        panel.addView(text("也可以到設定頁面調整 LINE Pay、載具、Google 錢包、銀行通知等偵測來源。", 13, MUTED, false));
 
-        panel.addView(text("也可以到設定頁面調整 LINE Pay、載具、Google 錢包、銀行通知等偵測來源。", 13, 0xFF66727E, false));
-
-        new AlertDialog.Builder(this)
-                .setTitle("鈴鐺通知設定")
-                .setView(panel)
-                .setNegativeButton("取消", null)
-                .setPositiveButton("儲存", (d, w) -> {
-                    String raw = time.getText().toString().trim();
-                    if (!raw.matches("^([01]?\\d|2[0-3]):[0-5]\\d$")) {
-                        Toast.makeText(this, "時間格式請輸入 09:00 這種格式", Toast.LENGTH_LONG).show();
-                        return;
-                    }
-                    AppSettings.setString(this, AppSettings.KEY_DAILY_NOTIFY_TIME, raw);
-                    DailyReportScheduler.schedule(this);
-                    Toast.makeText(this, "已更新通知設定", Toast.LENGTH_SHORT).show();
-                })
-                .show();
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        Button cancel = pill("取消", CHIP, TEXT);
+        Button save = bigSave("儲存");
+        actions.addView(cancel, marginLp(0, dp(50), 0, dp(12), dp(6), 0, 1));
+        actions.addView(save, marginLp(0, dp(50), dp(6), dp(12), 0, 0, 1));
+        panel.addView(actions);
+        cancel.setOnClickListener(v -> dialog.dismiss());
+        save.setOnClickListener(v -> {
+            String raw = time.getText().toString().trim();
+            if (!raw.matches("^([01]?\\d|2[0-3]):[0-5]\\d$")) {
+                Toast.makeText(this, "時間格式請輸入 09:00 這種格式", Toast.LENGTH_LONG).show();
+                return;
+            }
+            AppSettings.setString(this, AppSettings.KEY_DAILY_NOTIFY_TIME, raw);
+            DailyReportScheduler.schedule(this);
+            Toast.makeText(this, "已更新通知設定", Toast.LENGTH_SHORT).show();
+            dialog.dismiss();
+        });
+        dialog.setView(panel);
+        dialog.setOnShowListener(d -> { if (dialog.getWindow() != null) dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)); });
+        dialog.show();
     }
+
 
     private void showSettings() {
         tab = 3;
@@ -1211,7 +1250,7 @@ public class MainActivity extends Activity {
         advanced.addView(featureRow("月底預估花費", "依照目前花費速度推估月底可能花多少"));
         box.addView(advanced);
 
-        TextView version = text("AutoLedger V15｜智慧分類留白・修改介面優化版", 12, MUTED, false);
+        TextView version = text("AutoLedger V16｜分類標題・圖標選擇・圓角主題優化版", 12, MUTED, false);
         version.setGravity(Gravity.CENTER);
         version.setPadding(0, dp(16), 0, dp(10));
         box.addView(version);
@@ -1271,7 +1310,7 @@ public class MainActivity extends Activity {
         LinearLayout l = new LinearLayout(this);
         l.setOrientation(LinearLayout.VERTICAL);
         l.setPadding(dp(14), dp(14), dp(14), dp(14));
-        l.setBackground(round(CARD, dp(20), BORDER));
+        l.setBackground(round(CARD, dp(24), BORDER));
         return l;
     }
 
@@ -1323,7 +1362,7 @@ public class MainActivity extends Activity {
         b.setTextSize(16);
         b.setTypeface(Typeface.DEFAULT_BOLD);
         b.setAllCaps(false);
-        b.setBackground(roundGradient(c1, c2, dp(14)));
+        b.setBackground(roundGradient(c1, c2, dp(22)));
         return b;
     }
 
@@ -1345,7 +1384,7 @@ public class MainActivity extends Activity {
         b.setTextColor(fg);
         b.setTypeface(Typeface.DEFAULT_BOLD);
         b.setAllCaps(false);
-        b.setBackground(round(bg, dp(18), 0xFFE8E8E8));
+        b.setBackground(round(bg, dp(24), BORDER));
         return b;
     }
 
@@ -1355,7 +1394,7 @@ public class MainActivity extends Activity {
         b.setTextColor(fg);
         b.setTextSize(13);
         b.setAllCaps(false);
-        b.setBackground(round(bg, dp(16), 0xFFE7E7EA));
+        b.setBackground(round(bg, dp(20), BORDER));
         b.setMinHeight(dp(44));
         return b;
     }
@@ -1422,29 +1461,19 @@ public class MainActivity extends Activity {
     }
 
     private void showOnboarding() {
-        new AlertDialog.Builder(this)
-                .setTitle("歡迎使用自動記帳 V15")
-                .setMessage("這版新增 / 優化：\n\n1. 通知自動記帳：LINE Pay、載具、Google 錢包、銀行刷卡通知。\n2. 手動補登：收入支出都能加備註。\n3. 點紀錄先查看，長按才快速修改，避免誤觸。\n4. 防重複：同金額短時間交叉比對，避免一筆記兩次。\n5. 可匯出 CSV、備份、還原、清除資料。\n\n建議先去「設定」看通知讀取用途，再開啟通知讀取權限。")
-                .setPositiveButton("我知道了", (d, w) -> AppSettings.setBool(this, AppSettings.KEY_ONBOARDED, true))
-                .setNeutralButton("通知用途", (d, w) -> showNotificationPurpose())
-                .show();
+        showRoundedInfoDialog("歡迎使用自動記帳 V16", "這版新增 / 優化：\n\n1. 記錄標題改用分類名稱，分類改成茶飲，列表就顯示茶飲。\n2. 修改紀錄可以選圖標，圖標會跟著分類顯示。\n3. 自動通知先保留原始內容，不強制用 LINE 錢包或發票載具當標題。\n4. 介面與彈窗改成更圓弧，並依深色 / 淺色模式調整顏色。\n5. 防重複、CSV、備份、還原、清除資料都保留。", "我知道了", v -> AppSettings.setBool(this, AppSettings.KEY_ONBOARDED, true), "通知用途", v -> showNotificationPurpose());
     }
+
 
     private void showNotificationPurpose() {
-        new AlertDialog.Builder(this)
-                .setTitle("通知讀取用途說明")
-                .setMessage("自動記帳需要通知讀取權限，是為了在你授權後讀取 LINE Pay、載具發票、Google 錢包、銀行刷卡與交易簡訊通知，從通知文字抓出金額、店家、收入或支出。\n\n資料預設只存在你的手機本機。\n\nApp 會自動排除自己發出的通知，也會用金額、時間、來源與店家判斷同一筆消費，避免重複記帳。")
-                .setPositiveButton("了解", null)
-                .show();
+        showRoundedInfoDialog("通知讀取用途說明", "自動記帳需要通知讀取權限，是為了在你授權後讀取 LINE Pay、載具發票、Google 錢包、銀行刷卡與交易簡訊通知，從通知文字抓出金額、收入或支出。\n\n資料預設只存在你的手機本機。\n\nApp 會自動排除自己發出的通知，也會用金額、時間與原始通知內容判斷同一筆消費，避免重複記帳。", "了解", null, null, null);
     }
 
+
     private void showPrivacyPolicy() {
-        new AlertDialog.Builder(this)
-                .setTitle("隱私權政策")
-                .setMessage("自動記帳會在你授權後讀取通知內容，用於自動辨識付款、收入、發票與銀行交易。\n\n目前自用版資料預設儲存在手機本機，不會主動上傳到伺服器。\n\n你可以在設定中匯出 CSV、備份資料、還原資料或清除全部資料。\n\n若未來啟用 Google 同步，會在使用者同意後才將記帳資料同步到使用者自己的 Google 帳號。\n\n此 App 不提供投資建議；月底預估與儲蓄提醒只作為預算規劃參考。")
-                .setPositiveButton("關閉", null)
-                .show();
+        showRoundedInfoDialog("隱私權政策", "自動記帳會在你授權後讀取通知內容，用於自動辨識付款、收入、發票與銀行交易。\n\n目前自用版資料預設儲存在手機本機，不會主動上傳到伺服器。\n\n你可以在設定中匯出 CSV、備份資料、還原資料或清除全部資料。\n\n若未來啟用 Google 同步，會在使用者同意後才將記帳資料同步到使用者自己的 Google 帳號。\n\n此 App 不提供投資建議；月底預估與儲蓄提醒只作為預算規劃參考。", "關閉", null, null, null);
     }
+
 
     private void shareCsv() {
         String csv = TransactionStore.exportCsv(this);
@@ -1529,23 +1558,81 @@ public class MainActivity extends Activity {
                 .show();
     }
 
-    private void showTransactionDetail(Transaction tx) {
-        String message = "類型：" + ("income".equals(tx.direction) ? "收入" : "支出") +
-                "\n金額：" + TransactionStore.money(tx.amount) +
-                "\n分類：" + tx.category +
-                "\n店家 / 來源：" + tx.merchant +
-                "\n通知來源：" + tx.source +
-                "\n時間：" + TransactionStore.formatTime(tx.timeMillis) +
-                "\n備註 / 原始內容：\n" + tx.raw +
-                "\n\n為了避免誤觸，點紀錄只會先查看；要修改請按「修改」，或在列表長按該筆紀錄。";
-        new AlertDialog.Builder(this)
-                .setTitle("紀錄詳情")
-                .setMessage(message)
-                .setNegativeButton("關閉", null)
-                .setNeutralButton("刪除", (d, w) -> showDeleteTxConfirm(tx))
-                .setPositiveButton("修改", (d, w) -> showEditTransactionDialog(tx))
-                .show();
+    private View detailLine(String k, String v) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(0, dp(3), 0, dp(3));
+        row.addView(text(k, 13, MUTED, false), new LinearLayout.LayoutParams(dp(82), -2));
+        row.addView(text(v == null || v.trim().isEmpty() ? "可留空" : v, 14, TEXT, true), new LinearLayout.LayoutParams(0, -2, 1));
+        return row;
     }
+
+    private void showRoundedInfoDialog(String title, String message, String positive, View.OnClickListener positiveAction, String neutral, View.OnClickListener neutralAction) {
+        final AlertDialog dialog = new AlertDialog.Builder(this).create();
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(22), dp(20), dp(22), dp(16));
+        panel.setBackground(round(CARD, dp(26), BORDER));
+        panel.addView(text(title, 21, TEXT, true), marginLp(-1, -2, 0, 0, 0, dp(10)));
+        TextView body = text(message, 15, TEXT, false);
+        body.setLineSpacing(dp(2), 1.0f);
+        ScrollView sc = new ScrollView(this);
+        sc.addView(body, new ScrollView.LayoutParams(-1, -2));
+        panel.addView(sc, new LinearLayout.LayoutParams(-1, -2));
+        LinearLayout actions = new LinearLayout(this);
+        actions.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        if (neutral != null) {
+            Button n = smallChip(neutral, CHIP, GREEN);
+            n.setOnClickListener(v -> { dialog.dismiss(); if (neutralAction != null) neutralAction.onClick(v); });
+            actions.addView(n, new LinearLayout.LayoutParams(dp(120), dp(44)));
+        }
+        Button p = smallChip(positive == null ? "知道了" : positive, CHIP, GREEN);
+        p.setOnClickListener(v -> { dialog.dismiss(); if (positiveAction != null) positiveAction.onClick(v); });
+        actions.addView(p, marginLp(dp(120), dp(44), dp(8), 0, 0, 0));
+        panel.addView(actions, marginLp(-1, -2, 0, dp(12), 0, 0));
+        dialog.setView(panel);
+        dialog.setOnShowListener(d -> { if (dialog.getWindow() != null) dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)); });
+        dialog.show();
+    }
+
+    private void showTransactionDetail(Transaction tx) {
+        final AlertDialog dialog = new AlertDialog.Builder(this).create();
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(20), dp(18), dp(20), dp(14));
+        panel.setBackground(round(CARD, dp(26), BORDER));
+        panel.addView(text("紀錄詳情", 21, TEXT, true));
+        panel.addView(text("點修改可以調整分類、來源、備註與圖標。", 12, MUTED, false), marginLp(-1, -2, 0, dp(2), 0, dp(12)));
+        panel.addView(detailLine("類型", "income".equals(tx.direction) ? "收入" : "支出"));
+        panel.addView(detailLine("金額", TransactionStore.money(tx.amount)));
+        panel.addView(detailLine("分類", cleanCategory(tx.category).isEmpty() ? "未分類" : cleanCategory(tx.category)));
+        panel.addView(detailLine("來源 / 店家", empty(tx.merchant) ? "可留空" : tx.merchant));
+        panel.addView(detailLine("通知來源", empty(tx.source) ? "自動通知" : tx.source));
+        panel.addView(detailLine("時間", TransactionStore.formatTime(tx.timeMillis)));
+        TextView rawTitle = label("備註 / 原始內容");
+        panel.addView(rawTitle, marginLp(-1, -2, 0, dp(6), 0, 0));
+        TextView raw = text(empty(tx.raw) ? "無" : tx.raw, 13, MUTED, false);
+        raw.setPadding(dp(12), dp(10), dp(12), dp(10));
+        raw.setBackground(round(CHIP, dp(18), BORDER));
+        panel.addView(raw, marginLp(-1, -2, 0, dp(4), 0, dp(14)));
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        Button del = pill("刪除", CHIP, EXPENSE_RED);
+        Button close = pill("關閉", CHIP, TEXT);
+        Button edit = bigSave("修改");
+        actions.addView(del, marginLp(0, dp(48), 0, 0, dp(5), 0, 1));
+        actions.addView(close, marginLp(0, dp(48), dp(5), 0, dp(5), 0, 1));
+        actions.addView(edit, marginLp(0, dp(48), dp(5), 0, 0, 0, 1));
+        panel.addView(actions);
+        del.setOnClickListener(v -> { dialog.dismiss(); showDeleteTxConfirm(tx); });
+        close.setOnClickListener(v -> dialog.dismiss());
+        edit.setOnClickListener(v -> { dialog.dismiss(); showEditTransactionDialog(tx); });
+        dialog.setView(panel);
+        dialog.setOnShowListener(d -> { if (dialog.getWindow() != null) dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)); });
+        dialog.show();
+    }
+
 
     private void showEditTransactionDialog(Transaction tx) {
         final AlertDialog dialog = new AlertDialog.Builder(this).create();
@@ -1569,9 +1656,28 @@ public class MainActivity extends Activity {
         head.addView(close, new LinearLayout.LayoutParams(dp(44), dp(44)));
         panel.addView(head, marginLp(-1, -2, 0, 0, 0, dp(12)));
 
+        final boolean[] editingIncome = new boolean[]{"income".equals(tx.direction)};
+        final String[] selectedIcon = new String[]{!empty(tx.icon) ? tx.icon : (editingIncome[0] ? "💰" : iconFor(tx.category))};
+
+        LinearLayout iconRow = new LinearLayout(this);
+        iconRow.setOrientation(LinearLayout.HORIZONTAL);
+        iconRow.setGravity(Gravity.CENTER_VERTICAL);
+        TextView iconPreview = text(selectedIcon[0], 24, TEXT, false);
+        iconPreview.setGravity(Gravity.CENTER);
+        iconPreview.setBackground(round(iconBgFor(tx), dp(20), BORDER));
+        iconRow.addView(iconPreview, new LinearLayout.LayoutParams(dp(56), dp(56)));
+        LinearLayout iconText = new LinearLayout(this);
+        iconText.setOrientation(LinearLayout.VERTICAL);
+        iconText.setPadding(dp(12), 0, 0, 0);
+        iconText.addView(text("紀錄圖標", 14, TEXT, true));
+        iconText.addView(text("點右邊可選茶飲、餐飲、禮物、遊戲等圖標", 12, MUTED, false));
+        iconRow.addView(iconText, new LinearLayout.LayoutParams(0, -2, 1));
+        Button pickIcon = smallChip("更換", CHIP, ORANGE);
+        iconRow.addView(pickIcon, new LinearLayout.LayoutParams(dp(82), dp(44)));
+        panel.addView(iconRow, marginLp(-1, -2, 0, 0, 0, dp(12)));
+
         LinearLayout typeRow = new LinearLayout(this);
         typeRow.setOrientation(LinearLayout.HORIZONTAL);
-        final boolean[] editingIncome = new boolean[]{"income".equals(tx.direction)};
         Button expenseBtn = pill("支出", editingIncome[0] ? CHIP : 0xFFFFECEF, editingIncome[0] ? TEXT : EXPENSE_RED);
         Button incomeBtn = pill("收入", editingIncome[0] ? 0xFFE9F8F0 : CHIP, editingIncome[0] ? GREEN : TEXT);
         typeRow.addView(expenseBtn, marginLp(0, dp(46), 0, 0, dp(5), 0, 1));
@@ -1594,6 +1700,7 @@ public class MainActivity extends Activity {
         panel.addView(categorySuggestions, marginLp(-1, -2, 0, 0, 0, dp(9)));
         category.setOnFocusChangeListener((v, hasFocus) -> { if (hasFocus) categorySuggestions.setVisibility(View.VISIBLE); });
         category.setOnClickListener(v -> categorySuggestions.setVisibility(View.VISIBLE));
+        pickIcon.setOnClickListener(v -> showIconPickerDialog(iconPreview, category, selectedIcon, editingIncome[0]));
 
         final EditText merchant = edit("來源 / 店家，可留空", false);
         merchant.setText(tx.merchant == null ? "" : tx.merchant);
@@ -1620,6 +1727,7 @@ public class MainActivity extends Activity {
             expenseBtn.setBackground(round(0xFFFFECEF, dp(14), EXPENSE_RED));
             incomeBtn.setTextColor(TEXT);
             incomeBtn.setBackground(round(CHIP, dp(14), BORDER));
+            if (empty(category.getText().toString())) { selectedIcon[0] = "🧾"; iconPreview.setText(selectedIcon[0]); }
             categorySuggestions.removeAllViews();
             addMiniSuggestionRows(categorySuggestions, category, false);
             categorySuggestions.setVisibility(View.VISIBLE);
@@ -1630,6 +1738,7 @@ public class MainActivity extends Activity {
             expenseBtn.setBackground(round(CHIP, dp(14), BORDER));
             incomeBtn.setTextColor(GREEN);
             incomeBtn.setBackground(round(0xFFE9F8F0, dp(14), GREEN));
+            if (empty(category.getText().toString())) { selectedIcon[0] = "💰"; iconPreview.setText(selectedIcon[0]); }
             categorySuggestions.removeAllViews();
             addMiniSuggestionRows(categorySuggestions, category, true);
             categorySuggestions.setVisibility(View.VISIBLE);
@@ -1650,15 +1759,22 @@ public class MainActivity extends Activity {
                 Toast.makeText(this, "金額要大於 0", Toast.LENGTH_SHORT).show();
                 return;
             }
+            String finalCategory = category.getText().toString().trim();
+            String previousAutoIcon = "income".equals(tx.direction) ? "💰" : iconFor(tx.category);
+            String finalIcon = selectedIcon[0];
+            if (empty(tx.icon) && finalIcon.equals(previousAutoIcon) && !finalCategory.equals(tx.category == null ? "" : tx.category)) {
+                finalIcon = editingIncome[0] ? "💰" : iconFor(finalCategory);
+            }
             Transaction edited = new Transaction(
                     tx.timeMillis,
                     value,
                     editingIncome[0] ? "income" : "expense",
                     tx.source == null ? "" : tx.source,
                     merchant.getText().toString().trim(),
-                    category.getText().toString().trim(),
+                    finalCategory,
                     note.getText().toString().trim(),
-                    tx.hash == null || tx.hash.isEmpty() ? "edit-" + tx.timeMillis : tx.hash
+                    tx.hash == null || tx.hash.isEmpty() ? "edit-" + tx.timeMillis : tx.hash,
+                    finalIcon
             );
             boolean ok = TransactionStore.update(this, tx.hash, tx.timeMillis, edited);
             Toast.makeText(this, ok ? "已修改紀錄" : "修改失敗", Toast.LENGTH_SHORT).show();
@@ -1672,6 +1788,50 @@ public class MainActivity extends Activity {
                 if (dialog.getWindow() != null) dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
             } catch (Exception ignored) { }
         });
+        dialog.show();
+    }
+
+    private void showIconPickerDialog(TextView preview, EditText category, String[] selectedIcon, boolean income) {
+        final AlertDialog dialog = new AlertDialog.Builder(this).create();
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(18), dp(16), dp(18), dp(14));
+        panel.setBackground(round(CARD, dp(26), BORDER));
+        LinearLayout head = new LinearLayout(this);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        head.addView(text("選擇圖標", 20, TEXT, true), new LinearLayout.LayoutParams(0, -2, 1));
+        TextView close = text("×", 25, TEXT, true);
+        close.setGravity(Gravity.CENTER);
+        close.setOnClickListener(v -> dialog.dismiss());
+        head.addView(close, new LinearLayout.LayoutParams(dp(42), dp(42)));
+        panel.addView(head, marginLp(-1, -2, 0, 0, 0, dp(8)));
+        String[][] items = income
+                ? new String[][]{{"💰","收入"},{"💵","薪水"},{"🧧","紅包"},{"↩","退款"},{"👨‍👩‍👧","家人"},{"⭐","其他"}}
+                : new String[][]{{"🥤","茶飲"},{"🍴","餐飲"},{"🚌","交通"},{"🏪","超商"},{"🛍","購物"},{"▶","訂閱"},{"🎮","遊戲"},{"🎁","禮物"},{"💊","醫療"},{"📚","學習"},{"✈️","旅遊"},{"🏋️","運動"},{"🐾","寵物"},{"🏠","房租"},{"🧾","其他"}};
+        for (int i = 0; i < items.length; i += 3) {
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            for (int j = 0; j < 3; j++) {
+                if (i + j < items.length) {
+                    String ic = items[i + j][0];
+                    String name = items[i + j][1];
+                    Button b = smallChip(ic + "  " + name, CHIP, TEXT);
+                    b.setTextSize(13);
+                    b.setOnClickListener(v -> {
+                        selectedIcon[0] = ic;
+                        preview.setText(ic);
+                        if (category.getText().toString().trim().isEmpty() || cleanCategory(category.getText().toString()).isEmpty()) category.setText(name);
+                        dialog.dismiss();
+                    });
+                    row.addView(b, marginLp(0, dp(42), dp(3), dp(3), dp(3), dp(3), 1));
+                } else {
+                    row.addView(new TextView(this), marginLp(0, dp(42), dp(3), dp(3), dp(3), dp(3), 1));
+                }
+            }
+            panel.addView(row);
+        }
+        dialog.setView(panel);
+        dialog.setOnShowListener(d -> { if (dialog.getWindow() != null) dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)); });
         dialog.show();
     }
 
