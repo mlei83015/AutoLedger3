@@ -28,7 +28,7 @@ public class AppSettings {
     public static final String KEY_THEME = "theme";
     public static final String KEY_PALETTE = "palette";
     public static final String KEY_MONTHLY_BUDGET = "monthly_budget";
-    public static final String KEY_ONBOARDED = "onboarded_v28";
+    public static final String KEY_ONBOARDED = "onboarded_v33";
     public static final String KEY_NOTIFY_DAILY = "notify_daily_report";
     public static final String KEY_NOTIFY_AUTO_SAVED = "notify_auto_saved";
     public static final String KEY_NOTIFY_BUDGET = "notify_budget";
@@ -41,6 +41,7 @@ public class AppSettings {
     public static final String KEY_MONTHLY_EXTRA_PREFIX = "monthly_extra_";
     public static final String KEY_MONTHLY_BALANCE_ADJUST_PREFIX = "monthly_balance_adjust_";
     public static final String KEY_MONTHLY_OPENING_SPENT_PREFIX = "monthly_opening_spent_";
+    public static final String KEY_MONTHLY_REMAINING_BALANCE_PREFIX = "monthly_remaining_balance_";
     public static final String KEY_DEBT_RECORDS = "debt_records_v1";
     public static final String KEY_FIXED_RECORDS = "fixed_records_v1";
     public static final String KEY_CUSTOM_ICONS = "custom_icons_v1";
@@ -85,7 +86,16 @@ public class AppSettings {
     }
 
     public static void setMonthlyBudget(Context c, int amount) {
-        sp(c).edit().putInt(KEY_MONTHLY_BUDGET, Math.max(0, amount)).apply();
+        int safe = Math.max(0, amount);
+        SharedPreferences prefs = sp(c);
+        int oldBudget = getMonthlyBudget(c);
+        String remainKey = KEY_MONTHLY_REMAINING_BALANCE_PREFIX + currentMonthKey();
+        int oldRemain = prefs.getInt(remainKey, oldBudget);
+        boolean wasAtFullBudget = !prefs.contains(remainKey) || oldRemain == oldBudget;
+        SharedPreferences.Editor editor = prefs.edit().putInt(KEY_MONTHLY_BUDGET, safe);
+        if (wasAtFullBudget) editor.putInt(remainKey, safe);
+        editor.apply();
+        try { BalanceWidgetProvider.updateAll(c); } catch (Exception ignored) { }
     }
 
 
@@ -116,22 +126,47 @@ public class AppSettings {
         return sp(c).getInt(KEY_MONTHLY_OPENING_SPENT_PREFIX + currentMonthKey(), 0);
     }
 
+    public static void ensureMonthlyRemainingBalance(Context c) {
+        SharedPreferences prefs = sp(c);
+        String key = KEY_MONTHLY_REMAINING_BALANCE_PREFIX + currentMonthKey();
+        if (prefs.contains(key)) return;
+
+        // V32：每個新月份第一次使用時，剩餘餘額會從「本月可用預算」開始。
+        // 如果是從舊版升級，保留舊版已設定的開局花費，避免升級後數字跳掉。
+        int migratedSpent = TransactionStore.monthExpense(c) + getMonthlyOpeningSpent(c);
+        int initialRemain = Math.max(0, getMonthlyUsableBudget(c) - migratedSpent);
+        prefs.edit().putInt(key, initialRemain).apply();
+    }
+
+    public static int getCurrentRemainingBalance(Context c) {
+        ensureMonthlyRemainingBalance(c);
+        return Math.max(0, sp(c).getInt(KEY_MONTHLY_REMAINING_BALANCE_PREFIX + currentMonthKey(), getMonthlyUsableBudget(c)));
+    }
+
     public static void setCurrentRemainingBalance(Context c, int desiredBalance) {
         int safeBalance = Math.max(0, desiredBalance);
-        int rawBalance = getMonthlyBudget(c) + TransactionStore.totalIncome(c) - TransactionStore.totalExpense(c);
-        int adjustment = safeBalance - rawBalance;
-        int openingSpent = Math.max(0, getMonthlyUsableBudget(c) - safeBalance - TransactionStore.monthExpense(c));
         sp(c).edit()
-                .putInt(KEY_MONTHLY_BALANCE_ADJUST_PREFIX + currentMonthKey(), adjustment)
-                .putInt(KEY_MONTHLY_OPENING_SPENT_PREFIX + currentMonthKey(), openingSpent)
+                .putInt(KEY_MONTHLY_REMAINING_BALANCE_PREFIX + currentMonthKey(), safeBalance)
+                .remove(KEY_MONTHLY_BALANCE_ADJUST_PREFIX + currentMonthKey())
+                .remove(KEY_MONTHLY_OPENING_SPENT_PREFIX + currentMonthKey())
                 .apply();
+        try { BalanceWidgetProvider.updateAll(c); } catch (Exception ignored) { }
+    }
+
+    public static void addToCurrentRemainingBalance(Context c, int delta) {
+        ensureMonthlyRemainingBalance(c);
+        int next = Math.max(0, getCurrentRemainingBalance(c) + delta);
+        sp(c).edit().putInt(KEY_MONTHLY_REMAINING_BALANCE_PREFIX + currentMonthKey(), next).apply();
+        try { BalanceWidgetProvider.updateAll(c); } catch (Exception ignored) { }
     }
 
     public static void clearCurrentMonthBalanceLink(Context c) {
         sp(c).edit()
                 .remove(KEY_MONTHLY_BALANCE_ADJUST_PREFIX + currentMonthKey())
                 .remove(KEY_MONTHLY_OPENING_SPENT_PREFIX + currentMonthKey())
+                .remove(KEY_MONTHLY_REMAINING_BALANCE_PREFIX + currentMonthKey())
                 .apply();
+        ensureMonthlyRemainingBalance(c);
     }
 
     public static String getString(Context c, String key, String def) {
@@ -286,7 +321,7 @@ public class AppSettings {
         boolean isLinePay = all.contains("line pay") || all.contains("linepay") || all.contains("line錢包") || all.contains("line pay付款") || all.contains("line pay 付款");
         boolean isInvoice = all.contains("載具") || all.contains("發票") || all.contains("invoice") || all.contains("einvoice") || all.contains("財政部");
         boolean isGoogleWallet = all.contains("google wallet") || all.contains("google pay") || all.contains("gpay") || all.contains("google錢包") || all.contains("google 錢包") || all.contains("walletnfcrel");
-        boolean isBank = all.contains("銀行") || all.contains("帳戶") || all.contains("信用卡") || all.contains("金融卡") || all.contains("刷卡") || all.contains("atm") || all.contains("bank");
+        boolean isBank = all.contains("銀行") || all.contains("中國信託") || all.contains("中信") || all.contains("ctbc") || all.contains("帳戶") || all.contains("轉帳") || all.contains("匯款") || all.contains("扣款") || all.contains("信用卡") || all.contains("金融卡") || all.contains("刷卡") || all.contains("atm") || all.contains("bank");
         boolean isSms = all.contains("sms") || all.contains("mms") || all.contains("簡訊") || all.contains("訊息");
 
         if (isLinePay) return getBool(c, KEY_LINE_PAY, true);

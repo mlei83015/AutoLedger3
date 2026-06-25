@@ -83,8 +83,8 @@ public class TransactionStore {
     }
 
     private static boolean mergePointDiscountIfNeeded(Context context, List<Transaction> list, Transaction tx) {
-        // V33：禁止跨通知折抵合併。折抵只能從同一則通知內解析，避免 Google 錢包 20 + 銀行轉帳 90 被誤合成折抵 70。
         if (tx == null || tx.hash == null || tx.hash.startsWith("manual-") || !"expense".equals(tx.direction)) return false;
+        if (isTransferRecord(tx)) return false;
         String newType = sourceType(tx);
         if (!isPaymentSignal(newType)) return false;
 
@@ -93,6 +93,7 @@ public class TransactionStore {
             if (checked++ > 220) break;
             Transaction old = list.get(i);
             if (old == null || !"expense".equals(old.direction)) continue;
+            if (isTransferRecord(old)) continue;
             if (old.hash != null && old.hash.startsWith("manual-")) continue;
             if (old.amount == tx.amount) continue;
 
@@ -106,13 +107,19 @@ public class TransactionStore {
                     || merchantSimilar(old.raw, tx.raw)
                     || merchantSimilar(old.merchant, tx.raw)
                     || merchantSimilar(old.raw, tx.merchant);
+            boolean sameRaw = compact(old.raw).equals(compact(tx.raw));
+            boolean discountEvidence = hasDiscountEvidence(old) || hasDiscountEvidence(tx);
             boolean knownPair = isLineBankWalletPair(oldType, newType) || isInvoiceWithWalletBank(oldType, newType);
+
+            // V33 修正版：不同金額只在「真的像同一筆折抵」時才合併。
+            // 不能再只因為 LINE Pay / 銀行 / Google 錢包通知時間很近就把 90 元與 20 元混成同一筆。
+            boolean trustedDiscountMatch = sameMerchant || sameRaw || discountEvidence;
 
             // V31 修正版：如果其中一筆已經有明確「原價 / 點數折抵 / 實付」，
             // 只把另一筆金額等於「原價」或「實付」的通知視為同一筆；
             // 不再用最大值/最小值硬猜，避免 LINE Pay 使用 3 點被誤判成折抵 128 元。
             if (old.discountAmount > 0 || tx.discountAmount > 0 || old.originalAmount > 0 || tx.originalAmount > 0) {
-                if (false && explicitDiscountRelated(old, tx) && knownPair && diff <= 72L * 60L * 60L * 1000L && (sameDate || sameMerchant || diff <= 45L * 60L * 1000L)) {
+                if (explicitDiscountRelated(old, tx) && knownPair && trustedDiscountMatch && diff <= 72L * 60L * 60L * 1000L && (sameDate || sameMerchant || diff <= 45L * 60L * 1000L)) {
                     Transaction merged = buildExplicitDiscountMergedTransaction(old, tx);
                     list.set(i, merged);
                     saveAll(context, list);
@@ -132,7 +139,7 @@ public class TransactionStore {
             boolean delayedInvoice = isInvoiceWithWalletBank(oldType, newType) && diff <= 72L * 60L * 60L * 1000L && (sameDate || sameMerchant);
             boolean delayedLineBank = isLineBankWalletPair(oldType, newType) && diff <= 12L * 60L * 60L * 1000L && (sameDate && sameMerchant);
 
-            if (false && knownPair && reasonableDiscount && (strongTiming || delayedInvoice || delayedLineBank)) {
+            if (knownPair && reasonableDiscount && trustedDiscountMatch && (strongTiming || delayedInvoice || delayedLineBank)) {
                 Transaction merged = buildDiscountMergedTransaction(old, tx);
                 list.set(i, merged);
                 saveAll(context, list);
@@ -238,18 +245,19 @@ public class TransactionStore {
             long diff = Math.abs(old.timeMillis - tx.timeMillis);
             String oldType = sourceType(old);
             String newType = sourceType(tx);
-            boolean sameSource = safe(old.source).equalsIgnoreCase(safe(tx.source));
+            boolean transferPair = isTransferRecord(old) || isTransferRecord(tx);
+            boolean sameSource = !safe(old.source).isEmpty() && safe(old.source).equalsIgnoreCase(safe(tx.source));
             boolean sameMerchant = merchantSimilar(old.merchant, tx.merchant) || merchantSimilar(old.raw, tx.raw) || merchantSimilar(old.merchant, tx.raw) || merchantSimilar(old.raw, tx.merchant);
             boolean sameRaw = compact(old.raw).equals(compact(tx.raw));
             boolean bothPaymentSignals = isPaymentSignal(oldType) && isPaymentSignal(newType);
             boolean crossSource = !oldType.equals(newType) || !safe(old.source).equalsIgnoreCase(safe(tx.source));
 
-            if (diff <= veryShortWindow && (sameSource || sameMerchant || sameRaw || bothPaymentSignals)) {
+            if (diff <= veryShortWindow && (sameSource || sameMerchant || sameRaw || (!transferPair && bothPaymentSignals))) {
                 logDuplicate(context, old, tx, "5 分鐘內同金額付款/同來源/同店家");
                 return true;
             }
 
-            if (diff <= shortWindow && bothPaymentSignals) {
+            if (!transferPair && diff <= shortWindow && bothPaymentSignals) {
                 logDuplicate(context, old, tx, "30 分鐘內同金額付款通知：LINE Pay / Google 錢包 / 銀行 / 載具交叉比對");
                 return true;
             }
@@ -258,14 +266,15 @@ public class TransactionStore {
                 continue;
             }
 
-            boolean invoicePair = ("invoice".equals(oldType) && isPaymentSignal(newType)) || ("invoice".equals(newType) && isPaymentSignal(oldType));
-            boolean walletBankPair = isWalletOrBank(oldType) && isWalletOrBank(newType) && crossSource;
-            boolean strongKnownCrossSource = isPaymentSignal(oldType) && isPaymentSignal(newType) && crossSource && sameDay(old.timeMillis, tx.timeMillis);
+            boolean invoicePair = !transferPair && (("invoice".equals(oldType) && isPaymentSignal(newType)) || ("invoice".equals(newType) && isPaymentSignal(oldType)));
+            boolean walletBankPair = !transferPair && isWalletOrBank(oldType) && isWalletOrBank(newType) && crossSource;
+            boolean strongKnownCrossSource = !transferPair && isPaymentSignal(oldType) && isPaymentSignal(newType) && crossSource && sameDay(old.timeMillis, tx.timeMillis);
+            boolean trustedSameAmountMatch = sameMerchant || sameRaw || diff <= shortWindow;
 
-            if (strongKnownCrossSource && diff <= 24L * 60L * 60L * 1000L) {
-                // V12：同一天、同金額，且來源是 LINE Pay / 載具 / Google 錢包 / 銀行刷卡等付款訊號時，優先視為同一筆。
+            if (strongKnownCrossSource && trustedSameAmountMatch && diff <= 24L * 60L * 60L * 1000L) {
+                // V33：同一天、同金額跨來源仍會去重，但需要時間近、同店家或原文相同，避免同日兩筆剛好同金額被吃掉。
                 // 這是為了避免 LINE Pay 先跳、銀行或載具晚一點又跳，造成一筆消費記兩次。
-                logDuplicate(context, old, tx, "V12 同日同金額跨來源付款通知，判定同一筆");
+                logDuplicate(context, old, tx, "V33 同日同金額跨來源付款通知，判定同一筆");
                 return true;
             }
 
@@ -274,7 +283,7 @@ public class TransactionStore {
                 return true;
             }
 
-            if (walletBankPair && diff <= walletBankWindow && sameDay(old.timeMillis, tx.timeMillis)) {
+            if (walletBankPair && trustedSameAmountMatch && diff <= walletBankWindow && sameDay(old.timeMillis, tx.timeMillis)) {
                 logDuplicate(context, old, tx, "LINE Pay / Google 錢包 / 銀行刷卡通知同金額，判定同一筆");
                 return true;
             }
@@ -292,9 +301,36 @@ public class TransactionStore {
         if (s.contains("載具") || s.contains("發票") || s.contains("invoice") || s.contains("einvoice") || s.contains("財政部")) return "invoice";
         if (s.contains("linepay") || s.contains("linepay") || s.contains("line") && s.contains("pay") || s.contains("line錢包")) return "line_pay";
         if (s.contains("googlewallet") || s.contains("googlepay") || s.contains("google錢包") || s.contains("google 錢包") || s.contains("walletnfcrel")) return "google_wallet";
-        if (s.contains("銀行") || s.contains("信用卡") || s.contains("金融卡") || s.contains("刷卡") || s.contains("bank") || s.contains("visa") || s.contains("mastercard")) return "bank_card";
+        if (s.contains("銀行") || s.contains("中國信託") || s.contains("中信") || s.contains("ctbc") || s.contains("帳戶") || s.contains("轉帳") || s.contains("匯款") || s.contains("扣款") || s.contains("信用卡") || s.contains("金融卡") || s.contains("刷卡") || s.contains("bank") || s.contains("visa") || s.contains("mastercard")) return "bank_card";
         if (s.contains("錢包") || s.contains("街口") || s.contains("全支付") || s.contains("悠遊付") || s.contains("pi拍錢包") || s.contains("pay")) return "wallet";
         return "unknown";
+    }
+
+    private static boolean hasDiscountEvidence(Transaction t) {
+        if (t == null) return false;
+        if (t.originalAmount > 0 || t.discountAmount > 0) return true;
+        String s = compact(t.raw).toLowerCase(Locale.ROOT);
+        return s.contains("折抵")
+                || s.contains("折扣")
+                || s.contains("優惠")
+                || s.contains("點數")
+                || s.contains("抵用")
+                || s.contains("實付")
+                || s.contains("原價")
+                || s.contains("point")
+                || s.contains("coupon")
+                || s.contains("discount");
+    }
+
+    private static boolean isTransferRecord(Transaction t) {
+        if (t == null) return false;
+        String s = compact(t.source + " " + t.merchant + " " + t.category + " " + t.raw);
+        return s.contains("轉帳")
+                || s.contains("匯款")
+                || s.contains("轉出")
+                || s.contains("轉給")
+                || s.contains("Outwardtransfer")
+                || s.contains("outwardtransfer");
     }
 
     private static boolean isPaymentSignal(String type) {

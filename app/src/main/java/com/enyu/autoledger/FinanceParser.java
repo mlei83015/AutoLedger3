@@ -29,11 +29,11 @@ public class FinanceParser {
         String direction = detectDirection(normalized, packageName, appName);
         if (direction == null) return null;
 
-        // V16 起：自動通知先不自動填分類與來源，使用者可點紀錄進去修改。
+        // V33 起：自動通知保留來源、店家與粗分類，讓列表更容易辨認，也讓去重比對不只依賴金額。
         // V23 起：如果通知本身有「原價 / 點數折抵 / 實付」，會把首頁與預算改用實付金額。
-        String source = "";
-        String merchant = "";
-        String category = "";
+        String source = detectSource(packageName, appName, normalized);
+        String merchant = detectMerchant(normalized, title, appName);
+        String category = detectCategory(normalized, merchant, direction);
 
         String enrichedRaw = normalized;
         if ("expense".equals(direction) && info.hasDiscountInfo()) {
@@ -188,13 +188,19 @@ public class FinanceParser {
         String lower = (s + " " + packageName + " " + appName).toLowerCase(Locale.ROOT);
         boolean isLinePay = lower.contains("line pay") || lower.contains("linepay") || lower.contains("line錢包");
         boolean isGoogleWallet = lower.contains("google wallet") || lower.contains("google pay") || lower.contains("google錢包") || lower.contains("google 錢包") || lower.contains("walletnfcrel");
+        boolean isCtbc = lower.contains("ctbc") || s.contains("中國信託") || s.contains("中信");
+
+        // V33：中國信託等銀行轉帳給朋友時，通知常同時出現「轉入帳號」和金額；
+        // 只要看到已轉帳 / 轉帳成功 / 轉給 / 匯款成功等語意，就先當成支出。
+        boolean outgoingTransferText = looksOutgoingTransfer(s);
 
         // V31：先判斷「明確支出」再判斷收入，避免銀行通知同時出現「轉入帳號 / Inward transfer account」時誤判成收入。
         // 例如中國信託轉帳通知常會同時列出轉入帳號與轉出帳號；只要有轉出帳號 / Outward transfer account，代表這筆是轉出去。
         boolean refundLike = containsAny(s, "退款入帳", "退貨入帳", "退刷入帳", "還款入帳", "退款成功", "退貨成功");
         boolean clearOutgoingTransfer = containsAny(s,
                 "轉出帳號", "轉出帳戶", "轉出帳號", "轉出戶", "轉出",
-                "轉帳金額", "轉帳交易", "立即轉帳", "匯出", "支出", "扣帳", "扣款", "提款",
+                "轉帳成功", "轉帳完成", "已轉帳", "立即轉帳", "轉帳金額", "轉帳交易", "轉帳給", "轉給",
+                "匯款成功", "匯款完成", "已匯款", "匯款給", "匯出", "支出", "扣帳", "扣款", "提款",
                 "付款成功", "付款完成", "付款", "支付", "消費", "刷卡",
                 "Outward transfer account", "outward transfer account", "Outward transfer", "outward transfer", "you have executed");
         boolean clearIncoming = containsAny(s,
@@ -204,11 +210,35 @@ public class FinanceParser {
         // LINE Pay / Google 錢包一般都是付款通知；除非明確是退款入帳，不然先當支出。
         if ((isLinePay || isGoogleWallet) && !refundLike) return "expense";
         if (refundLike) return "income";
+        if (outgoingTransferText || (isCtbc && clearOutgoingTransfer)) return "expense";
         if (clearOutgoingTransfer) return "expense";
         if (clearIncoming) return "income";
 
         if (containsAny(s, "發票", "載具", "消費明細", "交易明細")) return "expense";
         return null;
+    }
+
+    private static boolean looksOutgoingTransfer(String s) {
+        if (s == null) return false;
+        if (containsAny(s, "轉帳成功", "轉帳完成", "已轉帳", "轉帳給", "轉給", "匯款成功", "匯款完成", "已匯款", "匯款給")) {
+            return true;
+        }
+        Pattern givePattern = Pattern.compile("(?:轉帳|匯款|轉出)[^\\n。；;，,]{0,24}(?:給|至|到|予|往|對方|朋友|同學|帳號|帳戶)");
+        if (givePattern.matcher(s).find()) return true;
+        Pattern amountThenTarget = Pattern.compile("(?:給|轉給|匯給)[^\\n。；;，,]{0,24}(?:NT\\$|NTD|TWD|\\$)?\\s*[0-9,]+\\s*(?:元)?");
+        return amountThenTarget.matcher(s).find();
+    }
+
+    private static String detectSource(String packageName, String appName, String s) {
+        String all = ((packageName == null ? "" : packageName) + " " +
+                (appName == null ? "" : appName) + " " +
+                (s == null ? "" : s)).toLowerCase(Locale.ROOT);
+        if (all.contains("line pay") || all.contains("linepay") || all.contains("line錢包")) return "LINE Pay";
+        if (all.contains("google wallet") || all.contains("google pay") || all.contains("google錢包") || all.contains("walletnfcrel")) return "Google 錢包";
+        if (all.contains("ctbc") || (s != null && (s.contains("中國信託") || s.contains("中信")))) return "中國信託";
+        if (s != null && (s.contains("載具") || s.contains("發票"))) return "電子發票";
+        if (appName != null && !appName.trim().isEmpty()) return appName.trim();
+        return packageName == null ? "" : packageName;
     }
 
     private static String detectMerchant(String s, String title, String appName) {
@@ -233,8 +263,9 @@ public class FinanceParser {
         if (containsAny(all, "7-ELEVEN", "711", "全家", "萊爾富", "OK超商", "統一超商", "便利商店", "超商")) return "超商";
         if (containsAny(all, "飲料", "咖啡", "早餐", "午餐", "晚餐", "餐", "麥當勞", "KFC", "星巴克", "迷客夏", "清心", "可不可")) return "餐飲";
         if (containsAny(all, "公車", "台鐵", "高鐵", "捷運", "UBER", "TAXI", "停車", "加油", "悠遊卡")) return "交通";
+        if (containsAny(all, "轉帳", "匯款", "轉出", "轉給")) return "轉帳";
         if (containsAny(all, "提款", "ATM")) return "提款";
-        if (containsAny(all, "NETFLIX", "SPOTIFY", "YOUTUBE", "APPLE", "GOOGLE", "訂閱")) return "訂閱";
+        if (containsAny(all, "NETFLIX", "SPOTIFY", "YOUTUBE PREMIUM", "APPLE.COM", "GOOGLE PLAY", "訂閱")) return "訂閱";
         return "未分類";
     }
 
