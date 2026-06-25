@@ -7,16 +7,19 @@ import android.graphics.RectF;
 import android.view.View;
 
 public class DonutChartView extends View {
-    private int spent = 0;
-    private int remaining = 1;
-    private int income = 0;
+    private int primary = 0;
+    private int secondary = 1;
+    private int third = 0;
     private final Paint ringPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint textPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private int colorSpent = 0xFFFF6B57;
-    private int colorRemain = 0xFF4AA8FF;
-    private int colorIncome = 0xFF24A99B;
+    private int colorPrimary = 0xFFFF6B57;
+    private int colorSecondary = 0xFF4AA8FF;
+    private int colorThird = 0xFF24A99B;
     private boolean darkMode = false;
     private String centerLabel = "已使用";
+    private String primaryLabel = "已花費";
+    private String secondaryLabel = "剩餘";
+    private String thirdLabel = "收入";
 
     public DonutChartView(Context context) {
         super(context);
@@ -30,13 +33,36 @@ public class DonutChartView extends View {
 
     public void setCenterLabel(String label) {
         this.centerLabel = label == null || label.trim().isEmpty() ? "已使用" : label;
+        if ("已使用".equals(this.centerLabel)) {
+            this.primaryLabel = "已花費";
+            this.secondaryLabel = "剩餘預算";
+        } else if ("支出".equals(this.centerLabel)) {
+            this.primaryLabel = "支出";
+            this.secondaryLabel = "剩餘預算";
+        } else if ("收入".equals(this.centerLabel)) {
+            this.primaryLabel = "收入";
+            this.secondaryLabel = "預算參考";
+        } else if ("結餘".equals(this.centerLabel)) {
+            this.primaryLabel = "結餘";
+            this.secondaryLabel = "已花費";
+        } else {
+            this.primaryLabel = this.centerLabel;
+            this.secondaryLabel = "剩餘";
+        }
         invalidate();
     }
 
-    public void setData(int spent, int remaining, int income, int palette) {
-        this.spent = Math.max(0, spent);
-        this.remaining = Math.max(0, remaining);
-        this.income = Math.max(0, income);
+    public void setSegmentLabels(String primaryLabel, String secondaryLabel, String thirdLabel) {
+        if (primaryLabel != null && !primaryLabel.trim().isEmpty()) this.primaryLabel = primaryLabel.trim();
+        if (secondaryLabel != null && !secondaryLabel.trim().isEmpty()) this.secondaryLabel = secondaryLabel.trim();
+        if (thirdLabel != null && !thirdLabel.trim().isEmpty()) this.thirdLabel = thirdLabel.trim();
+        invalidate();
+    }
+
+    public void setData(int primary, int secondary, int third, int palette) {
+        this.primary = Math.max(0, primary);
+        this.secondary = Math.max(0, secondary);
+        this.third = Math.max(0, third);
         int[][] palettes = new int[][]{
                 {0xFFFF6B57, 0xFF4AA8FF, 0xFF24A99B},
                 {0xFFFF7043, 0xFF7C6BFF, 0xFF4CAF50},
@@ -45,16 +71,18 @@ public class DonutChartView extends View {
                 {0xFFAB47BC, 0xFFFFA65A, 0xFF5C7CFA}
         };
         int[] p = palettes[Math.max(0, Math.min(palette, palettes.length - 1))];
-        colorSpent = p[0];
-        colorRemain = p[1];
-        colorIncome = p[2];
+        colorPrimary = p[0];
+        colorSecondary = p[1];
+        colorThird = p[2];
         invalidate();
     }
 
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-        int size = Math.min(MeasureSpec.getSize(widthMeasureSpec), dp(188));
-        if (size <= 0) size = dp(168);
+        int ws = MeasureSpec.getSize(widthMeasureSpec);
+        int hs = MeasureSpec.getSize(heightMeasureSpec);
+        int size = Math.min(ws <= 0 ? dp(188) : ws, hs <= 0 ? dp(188) : hs);
+        if (size <= 0) size = dp(188);
         setMeasuredDimension(size, size);
     }
 
@@ -63,51 +91,66 @@ public class DonutChartView extends View {
         super.onDraw(canvas);
         int w = getWidth();
         int h = getHeight();
-        float stroke = dp(18);
-        float pad = stroke / 2f + dp(10);
+        int total = Math.max(1, primary + secondary + third);
+        float stroke = Math.max(dp(18), w * 0.14f);
+        float labelPad = w >= dp(205) ? dp(34) : dp(22);
+        float pad = stroke / 2f + labelPad;
         RectF ring = new RectF(pad, pad, w - pad, h - pad);
-        int total = Math.max(1, spent + remaining);
-        float spentSweep = 360f * spent / total;
-        float remainSweep = 360f - spentSweep;
-        float gap = (spent > 0 && remaining > 0) ? 3.5f : 0f;
 
         ringPaint.setStyle(Paint.Style.STROKE);
         ringPaint.setStrokeWidth(stroke);
-        ringPaint.setStrokeCap(Paint.Cap.ROUND);
+        ringPaint.setStrokeCap(Paint.Cap.BUTT);
         ringPaint.setColor(darkMode ? 0xFF273341 : 0xFFE7ECF4);
         canvas.drawArc(ring, -90, 360, false, ringPaint);
 
         float start = -90f;
-        if (spent > 0) {
-            ringPaint.setColor(colorSpent);
-            float drawSweep = Math.max(6f, spentSweep - gap / 2f);
-            canvas.drawArc(ring, start, drawSweep, false, ringPaint);
-            start += spentSweep + gap;
-        }
-        if (remaining > 0) {
-            ringPaint.setColor(colorRemain);
-            float drawSweep = Math.max(6f, remainSweep - gap / 2f);
-            canvas.drawArc(ring, start, drawSweep, false, ringPaint);
-        }
-
-        int percent = (int) Math.round(spent * 100f / total);
-        if (spent == 0) percent = 0;
-        if (spent > 0 && percent < 1) percent = 1;
-
-        textPaint.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
-        textPaint.setTextSize(dp(22));
-        textPaint.setColor(darkMode ? 0xFFF7FAFF : 0xFF20242B);
-        canvas.drawText(percent + "%", w / 2f, h / 2f - dp(2), textPaint);
+        float gap = total > 1 ? 1.2f : 0f;
+        start = drawSegment(canvas, ring, start, primary, total, colorPrimary, gap);
+        start = drawSegment(canvas, ring, start, secondary, total, colorSecondary, gap);
+        drawSegment(canvas, ring, start, third, total, colorThird, gap);
 
         textPaint.setTypeface(android.graphics.Typeface.DEFAULT);
-        textPaint.setTextSize(dp(13));
-        textPaint.setColor(darkMode ? 0xFFAAB5C3 : 0xFF647083);
-        canvas.drawText(centerLabel, w / 2f, h / 2f + dp(20), textPaint);
+        textPaint.setTextSize(w >= dp(205) ? dp(12) : dp(9));
+        textPaint.setColor(darkMode ? 0xFFF7FAFF : 0xFF20242B);
+        drawOutsideLabel(canvas, ring, -90f, primary, total, primaryLabel);
+        drawOutsideLabel(canvas, ring, -90f + 360f * primary / total, secondary, total, secondaryLabel);
+        drawOutsideLabel(canvas, ring, -90f + 360f * (primary + secondary) / total, third, total, thirdLabel);
     }
 
-    public int spentColor() { return colorSpent; }
-    public int remainColor() { return colorRemain; }
-    public int incomeColor() { return colorIncome; }
+    private float drawSegment(Canvas canvas, RectF ring, float start, int value, int total, int color, float gap) {
+        if (value <= 0) return start;
+        float sweep = 360f * value / total;
+        float drawSweep = Math.max(0f, sweep - gap);
+        ringPaint.setColor(color);
+        canvas.drawArc(ring, start + gap / 2f, drawSweep, false, ringPaint);
+        return start + sweep;
+    }
+
+    private void drawOutsideLabel(Canvas canvas, RectF ring, float start, int value, int total, String label) {
+        if (value <= 0 || total <= 0) return;
+        float sweep = 360f * value / total;
+        if (sweep < 7f) return;
+        float angle = (float) Math.toRadians(start + sweep / 2f);
+        float cx = ring.centerX();
+        float cy = ring.centerY();
+        float radius = ring.width() / 2f + (getWidth() >= dp(205) ? dp(24) : dp(14));
+        float x = cx + (float) Math.cos(angle) * radius;
+        float y = cy + (float) Math.sin(angle) * radius;
+        int pct = Math.round(value * 100f / Math.max(1, total));
+        String text = label + "\n" + pct + "%";
+        String[] lines = text.split("\\n");
+        Paint.Align old = textPaint.getTextAlign();
+        if (x < cx - dp(8)) textPaint.setTextAlign(Paint.Align.RIGHT);
+        else if (x > cx + dp(8)) textPaint.setTextAlign(Paint.Align.LEFT);
+        else textPaint.setTextAlign(Paint.Align.CENTER);
+        canvas.drawText(lines[0], x, y - dp(3), textPaint);
+        canvas.drawText(lines.length > 1 ? lines[1] : "", x, y + dp(12), textPaint);
+        textPaint.setTextAlign(old);
+    }
+
+    public int spentColor() { return colorPrimary; }
+    public int remainColor() { return colorSecondary; }
+    public int incomeColor() { return colorThird; }
 
     private int dp(int v) {
         return Math.round(getResources().getDisplayMetrics().density * v);
