@@ -66,6 +66,7 @@ public class MainActivity extends Activity {
     public static final String ACTION_QUICK_INCOME = "com.enyu.autoledger.action.QUICK_INCOME";
     public static final String ACTION_EDIT_WIDGET_PHOTO = "com.enyu.autoledger.action.EDIT_WIDGET_PHOTO";
     private static final int REQUEST_WIDGET_IMAGE = 1901;
+    private static final int REQUEST_PROFILE_AVATAR = 1902;
 
     private LinearLayout root;
     private LinearLayout content;
@@ -117,6 +118,8 @@ public class MainActivity extends Activity {
             Uri uri = data.getData();
             AppSettings.setString(this, AppSettings.KEY_WIDGET_IMAGE_URI, uri.toString());
             showWidgetImageCropDialog(uri);
+        } else if (requestCode == REQUEST_PROFILE_AVATAR && resultCode == RESULT_OK && data != null && data.getData() != null) {
+            showProfileAvatarCropDialog(data.getData());
         }
     }
 
@@ -1134,6 +1137,8 @@ public class MainActivity extends Activity {
         }
         box.addView(summary, marginLp(-1, -2, 0, 0, 0, dp(12)));
 
+        addReportInsights(box, start, end, expense, income, budget, remainingBudget);
+
         LinearLayout tools = card();
         tools.addView(text("報表工具", 18, TEXT, true));
         LinearLayout toolRow = new LinearLayout(this);
@@ -1149,9 +1154,161 @@ public class MainActivity extends Activity {
         toolRow.addView(csv, new LinearLayout.LayoutParams(0, dp(50), 1));
         toolRow.addView(scan, new LinearLayout.LayoutParams(0, dp(50), 1));
         tools.addView(toolRow);
+        LinearLayout toolRow2 = new LinearLayout(this);
+        toolRow2.setOrientation(LinearLayout.HORIZONTAL);
+        Button budgetBtn = smallChip("設定預算", CHIP, ORANGE);
+        budgetBtn.setOnClickListener(v -> showBudgetDialog());
+        Button simulator = smallChip("財務模擬", CHIP, GREEN);
+        simulator.setOnClickListener(v -> showFinanceSimulator());
+        toolRow2.addView(budgetBtn, marginLp(0, dp(50), 0, dp(8), dp(5), 0, 1));
+        toolRow2.addView(simulator, marginLp(0, dp(50), dp(5), dp(8), 0, 0, 1));
+        tools.addView(toolRow2);
         box.addView(tools);
 
         setPage(scroll);
+    }
+
+    private void addReportInsights(LinearLayout box, long start, long end, int expense, int income, int budget, int remainingBudget) {
+        List<Transaction> txs = transactionsBetween(start, end);
+        int count = txs.size();
+        int autoCount = 0;
+        int manualCount = 0;
+        Transaction biggestExpense = null;
+        for (Transaction t : txs) {
+            if (t.hash != null && t.hash.startsWith("manual-")) manualCount++; else autoCount++;
+            if ("expense".equals(t.direction) && (biggestExpense == null || t.amount > biggestExpense.amount)) biggestExpense = t;
+        }
+
+        int days = Math.max(1, reportElapsedDays(start, end));
+        int avgDaily = Math.round(expense / (float) days);
+        int daysLeft = Math.max(1, daysLeftInReport(end));
+        int safeDaily = Math.max(0, Math.round(remainingBudget / (float) daysLeft));
+        int forecast = "month".equals(reportRange) ? TransactionStore.forecastMonthExpense(this) : Math.round(avgDaily * reportMonthFactor() * 30f);
+
+        LinearLayout rhythm = card();
+        rhythm.addView(text("花費節奏", 18, TEXT, true));
+        LinearLayout row1 = new LinearLayout(this);
+        row1.setOrientation(LinearLayout.HORIZONTAL);
+        row1.addView(metricBlock("平均每天", TransactionStore.money(avgDaily), EXPENSE_RED), marginLp(0, -2, 0, dp(10), dp(5), 0, 1));
+        row1.addView(metricBlock("接下來每天可花", TransactionStore.money(safeDaily), GREEN), marginLp(0, -2, dp(5), dp(10), 0, 0, 1));
+        rhythm.addView(row1);
+        LinearLayout row2 = new LinearLayout(this);
+        row2.setOrientation(LinearLayout.HORIZONTAL);
+        row2.addView(metricBlock("本區間紀錄", count + " 筆", TEXT), marginLp(0, -2, 0, dp(8), dp(5), 0, 1));
+        row2.addView(metricBlock("月底預估", TransactionStore.money(forecast), forecast > budget ? EXPENSE_RED : GREEN), marginLp(0, -2, dp(5), dp(8), 0, 0, 1));
+        rhythm.addView(row2);
+        rhythm.addView(text("自動 " + autoCount + " 筆｜手動 " + manualCount + " 筆｜收入 " + TransactionStore.money(income), 13, MUTED, false), marginLp(-1, -2, 0, dp(10), 0, 0));
+        box.addView(rhythm, marginLp(-1, -2, 0, 0, 0, dp(12)));
+
+        LinearLayout categories = card();
+        categories.addView(text("支出分類排行", 18, TEXT, true));
+        List<CategoryTotal> totals = categoryTotals(txs);
+        if (totals.isEmpty()) {
+            categories.addView(text("這個區間還沒有支出分類資料。", 14, MUTED, false), marginLp(-1, -2, 0, dp(10), 0, 0));
+        } else {
+            int max = Math.max(1, totals.get(0).amount);
+            int limit = Math.min(5, totals.size());
+            for (int i = 0; i < limit; i++) {
+                categories.addView(categoryBar(totals.get(i), max, expense), marginLp(-1, -2, 0, dp(10), 0, 0));
+            }
+        }
+        box.addView(categories, marginLp(-1, -2, 0, 0, 0, dp(12)));
+
+        LinearLayout notable = card();
+        notable.addView(text("重點提醒", 18, TEXT, true));
+        if (biggestExpense != null) {
+            notable.addView(text("最大筆支出：" + TransactionStore.money(biggestExpense.amount) + "｜" + recordTitle(biggestExpense), 14, TEXT, true), marginLp(-1, -2, 0, dp(8), 0, dp(2)));
+            notable.addView(text(TransactionStore.formatTime(biggestExpense.timeMillis) + "｜" + recordSubtitle(biggestExpense), 12, MUTED, false));
+        } else {
+            notable.addView(text("這個區間還沒有支出。", 14, MUTED, false), marginLp(-1, -2, 0, dp(8), 0, 0));
+        }
+        int saving = Math.max(0, budget - forecast);
+        String advice = forecast > budget
+                ? "照目前速度可能超出 " + TransactionStore.money(forecast - budget) + "，可以先檢查排行前兩名。"
+                : "照目前速度可能剩 " + TransactionStore.money(saving) + "，可以考慮先存一部分。";
+        notable.addView(text(advice, 13, forecast > budget ? EXPENSE_RED : GREEN, true), marginLp(-1, -2, 0, dp(10), 0, 0));
+        box.addView(notable, marginLp(-1, -2, 0, 0, 0, dp(12)));
+    }
+
+    private LinearLayout metricBlock(String label, String value, int color) {
+        LinearLayout block = new LinearLayout(this);
+        block.setOrientation(LinearLayout.VERTICAL);
+        block.setPadding(dp(12), dp(10), dp(12), dp(10));
+        block.setBackground(round(isDarkMode() ? 0xFF111923 : 0xFFF7FAFC, dp(16), BORDER));
+        block.addView(text(label, 12, MUTED, false));
+        block.addView(text(value, 19, color, true), marginLp(-1, -2, 0, dp(3), 0, 0));
+        return block;
+    }
+
+    private View categoryBar(CategoryTotal total, int max, int allExpense) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout top = new LinearLayout(this);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        top.addView(text(total.name, 14, TEXT, true), new LinearLayout.LayoutParams(0, -2, 1));
+        int pct = Math.round(total.amount * 100f / Math.max(1, allExpense));
+        top.addView(text(TransactionStore.money(total.amount) + "  " + pct + "%", 13, MUTED, false));
+        box.addView(top);
+
+        LinearLayout bar = new LinearLayout(this);
+        bar.setOrientation(LinearLayout.HORIZONTAL);
+        bar.setBackground(round(isDarkMode() ? 0xFF273341 : 0xFFE8EEF5, dp(6)));
+        View filled = new View(this);
+        filled.setBackground(round(EXPENSE_RED, dp(6)));
+        int filledWeight = Math.max(1, Math.round(total.amount * 100f / Math.max(1, max)));
+        bar.addView(filled, new LinearLayout.LayoutParams(0, dp(8), filledWeight));
+        View rest = new View(this);
+        bar.addView(rest, new LinearLayout.LayoutParams(0, dp(8), Math.max(1, 100 - filledWeight)));
+        box.addView(bar, marginLp(-1, dp(8), 0, dp(6), 0, 0));
+        return box;
+    }
+
+    private List<Transaction> transactionsBetween(long start, long end) {
+        ArrayList<Transaction> out = new ArrayList<>();
+        for (Transaction t : TransactionStore.getAll(this)) {
+            if (t.timeMillis >= start && t.timeMillis < end) out.add(t);
+        }
+        return out;
+    }
+
+    private int reportElapsedDays(long start, long end) {
+        long until = Math.min(System.currentTimeMillis(), end);
+        return Math.max(1, (int) Math.ceil((until - start) / (24f * 60f * 60f * 1000f)));
+    }
+
+    private int daysLeftInReport(long end) {
+        long left = Math.max(0, end - System.currentTimeMillis());
+        return Math.max(1, (int) Math.ceil(left / (24f * 60f * 60f * 1000f)));
+    }
+
+    private List<CategoryTotal> categoryTotals(List<Transaction> txs) {
+        ArrayList<CategoryTotal> totals = new ArrayList<>();
+        for (Transaction t : txs) {
+            if (!"expense".equals(t.direction)) continue;
+            String name = cleanCategory(t.category);
+            if (name.isEmpty()) name = "未分類";
+            CategoryTotal found = null;
+            for (CategoryTotal c : totals) {
+                if (c.name.equals(name)) { found = c; break; }
+            }
+            if (found == null) {
+                found = new CategoryTotal(name);
+                totals.add(found);
+            }
+            found.amount += Math.max(0, t.amount);
+        }
+        Collections.sort(totals, new Comparator<CategoryTotal>() {
+            @Override public int compare(CategoryTotal a, CategoryTotal b) {
+                return b.amount - a.amount;
+            }
+        });
+        return totals;
+    }
+
+    private static class CategoryTotal {
+        String name;
+        int amount;
+        CategoryTotal(String name) { this.name = name; }
     }
 
     private long reportStartMillis() {
@@ -1175,7 +1332,25 @@ public class MainActivity extends Activity {
     }
 
     private long reportEndMillis() {
-        return System.currentTimeMillis() + 60L * 1000L;
+        Calendar c = Calendar.getInstance();
+        if ("year".equals(reportRange)) {
+            c.add(Calendar.YEAR, 1);
+            c.set(Calendar.MONTH, Calendar.JANUARY);
+            c.set(Calendar.DAY_OF_MONTH, 1);
+        } else if ("six".equals(reportRange)) {
+            c.add(Calendar.MONTH, 1);
+            c.set(Calendar.DAY_OF_MONTH, 1);
+        } else if ("custom".equals(reportRange)) {
+            return System.currentTimeMillis() + 60L * 1000L;
+        } else {
+            c.add(Calendar.MONTH, 1);
+            c.set(Calendar.DAY_OF_MONTH, 1);
+        }
+        c.set(Calendar.HOUR_OF_DAY, 0);
+        c.set(Calendar.MINUTE, 0);
+        c.set(Calendar.SECOND, 0);
+        c.set(Calendar.MILLISECOND, 0);
+        return c.getTimeInMillis();
     }
 
     private int reportMonthFactor() {
@@ -1225,36 +1400,41 @@ public class MainActivity extends Activity {
 
         LinearLayout profile = new LinearLayout(this);
         profile.setGravity(Gravity.CENTER_VERTICAL);
-        TextView avatar = text("●", 48, isDarkMode() ? 0xFFFFFFFF : 0xFF222222, true);
-        avatar.setGravity(Gravity.CENTER);
+        ImageView avatar = new ImageView(this);
+        Bitmap avatarBitmap = loadProfileAvatarBitmap(78);
+        avatar.setImageBitmap(avatarBitmap != null ? avatarBitmap : defaultAvatarBitmap(78));
         avatar.setBackground(round(isDarkMode() ? 0xFF2A333F : 0xFFF2F2F2, dp(42), BORDER));
         profile.addView(avatar, new LinearLayout.LayoutParams(dp(78), dp(78)));
         LinearLayout info = new LinearLayout(this);
         info.setOrientation(LinearLayout.VERTICAL);
         info.setPadding(dp(14), 0, 0, 0);
-        info.addView(text("自動記帳使用者  ☁", 18, TEXT, true));
+        info.addView(text(profileName(), 18, TEXT, true));
+        info.addView(text("點頭像或名稱可編輯", 12, MUTED, false), marginLp(-1, -2, 0, dp(2), 0, 0));
         Button vip = smallChip("升級 VIP", CHIP, TEXT);
-        info.addView(vip, marginLp(dp(120), dp(42), 0, dp(8), 0, 0));
+        info.addView(vip, marginLp(dp(120), dp(38), 0, dp(8), 0, 0));
         profile.addView(info, new LinearLayout.LayoutParams(0, -2, 1));
+        profile.setOnClickListener(v -> { closeDialogs(); showProfileDialog(); });
         panel.addView(profile, marginLp(-1, -2, 0, 0, 0, dp(14)));
 
         LinearLayout topAction = new LinearLayout(this);
         topAction.setOrientation(LinearLayout.HORIZONTAL);
         Button search = smallChip("⌕", CHIP, TEXT);
+        search.setOnClickListener(v -> { closeDialogs(); showToolSearchDialog(); });
         Button streak = smallChip("🔥  連續記帳", 0xFFFF7076, 0xFFFFFFFF);
         streak.setTextSize(16);
         topAction.addView(search, new LinearLayout.LayoutParams(dp(76), dp(58)));
         topAction.addView(streak, new LinearLayout.LayoutParams(0, dp(58), 1));
         panel.addView(topAction, marginLp(-1, -2, 0, 0, 0, dp(16)));
 
-        panel.addView(sideMenuButton("◔", "帳務報表", v -> { closeDialogs(); showStats(); }));
-        panel.addView(sideMenuButton("💸", "欠款紀錄", v -> { closeDialogs(); showDebtTracker(); }));
-        panel.addView(sideMenuButton("💱", "匯率換算", v -> { closeDialogs(); showExchangeConverter(); }));
-        panel.addView(sideMenuButton("▦", "記帳小工具", v -> { closeDialogs(); showWidgetInfoDialog(); }));
-        panel.addView(sideMenuButton("▦", "分類管理", v -> { closeDialogs(); showSettings(); }));
-        panel.addView(sideMenuButton("🏷", "固定收支", v -> { closeDialogs(); showFixedRecordsManager(); }));
-        panel.addView(sideMenuButton("🌐", "財務模擬", v -> { closeDialogs(); showFinanceSimulator(); }));
-        panel.addView(sideMenuButton("⚙", "功能設定", v -> { closeDialogs(); showSettings(); }));
+        panel.addView(sideMenuButton("＋", "快速新增支出", v -> showManual("expense")));
+        panel.addView(sideMenuButton("＋", "快速新增收入", v -> showManual("income")));
+        panel.addView(sideMenuButton("◎", "設定目前剩餘", v -> showRemainingBalanceDialog()));
+        panel.addView(sideMenuButton("💸", "欠款紀錄", v -> showDebtTracker()));
+        panel.addView(sideMenuButton("💱", "匯率換算", v -> showExchangeConverter()));
+        panel.addView(sideMenuButton("▦", "載具與桌面小工具", v -> showWidgetImageSettingsDialog()));
+        panel.addView(sideMenuButton("🏷", "固定收支", v -> showFixedRecordsManager()));
+        panel.addView(sideMenuButton("🌐", "財務模擬", v -> showFinanceSimulator()));
+        panel.addView(sideMenuButton("⚙", "功能設定", v -> showSettings()));
         TextView encourage = text("👍  給予鼓勵", 15, 0xFF34B7E6, true);
         encourage.setGravity(Gravity.CENTER);
         encourage.setPadding(0, dp(14), 0, 0);
@@ -1290,6 +1470,110 @@ public class MainActivity extends Activity {
         wrap.setOrientation(LinearLayout.VERTICAL);
         wrap.addView(b, lp);
         return wrap;
+    }
+
+    private class MenuAction {
+        String icon, title, subtitle, keywords;
+        View.OnClickListener listener;
+        MenuAction(String icon, String title, String subtitle, String keywords, View.OnClickListener listener) {
+            this.icon = icon;
+            this.title = title;
+            this.subtitle = subtitle;
+            this.keywords = keywords;
+            this.listener = listener;
+        }
+    }
+
+    private List<MenuAction> menuActions() {
+        ArrayList<MenuAction> actions = new ArrayList<>();
+        actions.add(new MenuAction("＋", "快速新增支出", "手動補一筆花費", "支出 花費 手動 新增 記帳", v -> showManual("expense")));
+        actions.add(new MenuAction("＋", "快速新增收入", "薪水、零用錢、退款都可以補", "收入 薪水 零用錢 手動 新增", v -> showManual("income")));
+        actions.add(new MenuAction("◎", "設定目前剩餘", "更新現在實際還剩多少錢", "餘額 剩餘 預算 現在 剩多少", v -> showRemainingBalanceDialog()));
+        actions.add(new MenuAction("◔", "財務報表", "支出、收入、結餘與分類分析", "統計 報表 分析 支出 收入 結餘", v -> showStats()));
+        actions.add(new MenuAction("💸", "欠款紀錄", "朋友欠款、還款扣除", "欠款 借錢 朋友 還款 同學", v -> showDebtTracker()));
+        actions.add(new MenuAction("💱", "匯率換算", "台幣與外幣快速換算", "匯率 外幣 換算 美金 日幣", v -> showExchangeConverter()));
+        actions.add(new MenuAction("▦", "設定載具條碼", "小工具顯示手機載具條碼", "載具 條碼 發票 小工具", v -> showCarrierBarcodeDialog()));
+        actions.add(new MenuAction("🖼", "圖片小工具設定", "選圖片、裁切桌面小工具照片", "圖片 小工具 照片 裁切", v -> showWidgetImageSettingsDialog()));
+        actions.add(new MenuAction("🏷", "固定收支", "房租、訂閱、薪水一鍵新增", "固定 收支 房租 訂閱 薪水", v -> showFixedRecordsManager()));
+        actions.add(new MenuAction("🌐", "財務模擬", "試算月底會剩多少", "模擬 預估 月底 預算", v -> showFinanceSimulator()));
+        actions.add(new MenuAction("⇄", "掃描重複", "移除疑似同一筆的通知紀錄", "重複 掃描 除錯 防重複", v -> {
+            int removed = TransactionStore.autoFixDuplicates(this);
+            Toast.makeText(this, "已移除 " + removed + " 筆疑似重複資料", Toast.LENGTH_LONG).show();
+            refreshCurrent();
+        }));
+        actions.add(new MenuAction("CSV", "匯出 CSV", "匯出到試算表", "csv 匯出 試算表 excel", v -> shareCsv()));
+        actions.add(new MenuAction("⤓", "備份資料", "匯出 JSON 備份", "備份 json 匯出", v -> shareBackup()));
+        actions.add(new MenuAction("⚙", "功能設定", "通知、分類、外觀與備份", "設定 通知 分類 外觀 備份", v -> showSettings()));
+        return actions;
+    }
+
+    private void showToolSearchDialog() {
+        final AlertDialog dialog = new AlertDialog.Builder(this).create();
+        LinearLayout panel = dialogPanel(dp(30));
+        panel.addView(text("功能搜尋", 21, TEXT, true), marginLp(-1, -2, 0, 0, 0, dp(8)));
+        final EditText input = edit("輸入：預算、載具、CSV、欠款...", false);
+        input.setSingleLine(true);
+        panel.addView(input, marginLp(-1, dp(54), 0, 0, 0, dp(12)));
+
+        ScrollView resultsScroll = new ScrollView(this);
+        LinearLayout results = new LinearLayout(this);
+        results.setOrientation(LinearLayout.VERTICAL);
+        resultsScroll.addView(results, new ScrollView.LayoutParams(-1, -2));
+        panel.addView(resultsScroll, marginLp(-1, dp(360), 0, 0, 0, dp(12)));
+
+        Button close = pill("關閉", CHIP, TEXT);
+        panel.addView(close, marginLp(-1, dp(50), 0, 0, 0, 0));
+        close.setOnClickListener(v -> dialog.dismiss());
+
+        final Runnable[] refresh = new Runnable[1];
+        refresh[0] = new Runnable() {
+            @Override public void run() {
+                results.removeAllViews();
+                String q = input.getText().toString().trim().toLowerCase(Locale.ROOT);
+                int shown = 0;
+                for (MenuAction a : menuActions()) {
+                    String hay = (a.title + " " + a.subtitle + " " + a.keywords).toLowerCase(Locale.ROOT);
+                    if (!q.isEmpty() && !hay.contains(q)) continue;
+                    results.addView(searchResultRow(a, dialog), marginLp(-1, -2, 0, 0, 0, dp(8)));
+                    if (++shown >= 8) break;
+                }
+                if (shown == 0) {
+                    TextView empty = text("沒有找到功能。可以試試：預算、載具、備份、欠款、CSV。", 14, MUTED, false);
+                    empty.setGravity(Gravity.CENTER);
+                    empty.setPadding(dp(10), dp(26), dp(10), dp(26));
+                    results.addView(empty);
+                }
+            }
+        };
+        input.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) { refresh[0].run(); }
+            @Override public void afterTextChanged(Editable s) { }
+        });
+        refresh[0].run();
+        showCustomDialog(dialog, panel);
+    }
+
+    private View searchResultRow(MenuAction action, AlertDialog dialog) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(12), dp(10), dp(12), dp(10));
+        row.setBackground(round(CHIP, dp(16), BORDER));
+        TextView icon = text(action.icon, 18, ORANGE, true);
+        icon.setGravity(Gravity.CENTER);
+        row.addView(icon, new LinearLayout.LayoutParams(dp(44), dp(44)));
+        LinearLayout texts = new LinearLayout(this);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        texts.addView(text(action.title, 16, TEXT, true));
+        texts.addView(text(action.subtitle, 12, MUTED, false), marginLp(-1, -2, 0, dp(2), 0, 0));
+        row.addView(texts, new LinearLayout.LayoutParams(0, -2, 1));
+        row.setOnClickListener(v -> {
+            dialog.dismiss();
+            closeDialogs();
+            if (action.listener != null) action.listener.onClick(v);
+        });
+        return row;
     }
 
 
@@ -1685,6 +1969,158 @@ public class MainActivity extends Activity {
         }
     }
 
+    private String saveProfileAvatar(Bitmap bitmap) {
+        if (bitmap == null) return "";
+        try {
+            File f = new File(getFilesDir(), "autoledger_profile_avatar.png");
+            FileOutputStream fos = new FileOutputStream(f);
+            bitmap.compress(Bitmap.CompressFormat.PNG, 92, fos);
+            fos.flush();
+            fos.close();
+            return f.getAbsolutePath();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private Bitmap loadProfileAvatarBitmap(int sizeDp) {
+        String file = AppSettings.getString(this, AppSettings.KEY_PROFILE_AVATAR_FILE, "");
+        if (file == null || file.trim().isEmpty()) return null;
+        try {
+            Bitmap src = BitmapFactory.decodeFile(file);
+            if (src == null) return null;
+            int size = dp(sizeDp);
+            Bitmap out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+            Canvas canvas = new Canvas(out);
+            Paint p = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG | Paint.DITHER_FLAG);
+            Path circle = new Path();
+            circle.addCircle(size / 2f, size / 2f, size / 2f, Path.Direction.CW);
+            canvas.clipPath(circle);
+            canvas.drawBitmap(src, null, new Rect(0, 0, size, size), p);
+            return out;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private String profileName() {
+        String name = AppSettings.getString(this, AppSettings.KEY_PROFILE_NAME, "自動記帳使用者");
+        return name == null || name.trim().isEmpty() ? "自動記帳使用者" : name.trim();
+    }
+
+    private void showProfileDialog() {
+        final AlertDialog dialog = new AlertDialog.Builder(this).create();
+        LinearLayout panel = dialogPanel(dp(30));
+        panel.addView(text("個人資料", 21, TEXT, true), marginLp(-1, -2, 0, 0, 0, dp(8)));
+        panel.addView(text("名稱會顯示在側邊選單；頭像只存在手機本機。", 13, MUTED, false), marginLp(-1, -2, 0, 0, 0, dp(12)));
+
+        LinearLayout avatarRow = new LinearLayout(this);
+        avatarRow.setGravity(Gravity.CENTER_VERTICAL);
+        ImageView avatar = new ImageView(this);
+        Bitmap avatarBitmap = loadProfileAvatarBitmap(72);
+        if (avatarBitmap != null) avatar.setImageBitmap(avatarBitmap);
+        else avatar.setImageBitmap(defaultAvatarBitmap(72));
+        avatar.setBackground(round(CHIP, dp(36), BORDER));
+        avatarRow.addView(avatar, new LinearLayout.LayoutParams(dp(72), dp(72)));
+        LinearLayout avatarActions = new LinearLayout(this);
+        avatarActions.setOrientation(LinearLayout.VERTICAL);
+        avatarActions.setPadding(dp(12), 0, 0, 0);
+        Button choose = pill("選擇頭像", CHIP, ORANGE);
+        Button clear = pill("清除頭像", CHIP, EXPENSE_RED);
+        avatarActions.addView(choose, new LinearLayout.LayoutParams(-1, dp(44)));
+        avatarActions.addView(clear, marginLp(-1, dp(44), 0, dp(8), 0, 0));
+        avatarRow.addView(avatarActions, new LinearLayout.LayoutParams(0, -2, 1));
+        panel.addView(avatarRow, marginLp(-1, -2, 0, 0, 0, dp(14)));
+
+        panel.addView(label("顯示名稱"));
+        final EditText name = edit("例如：恩宇", false);
+        name.setSingleLine(true);
+        name.setText(profileName());
+        panel.addView(name, marginLp(-1, dp(56), 0, 0, 0, dp(14)));
+
+        LinearLayout actions = dialogActionsRow();
+        Button cancel = pill("取消", CHIP, TEXT);
+        Button save = bigSave("儲存");
+        actions.addView(cancel, marginLp(0, dp(50), 0, 0, dp(6), 0, 1));
+        actions.addView(save, marginLp(0, dp(50), dp(6), 0, 0, 0, 1));
+        panel.addView(actions);
+
+        choose.setOnClickListener(v -> {
+            AppSettings.setString(this, AppSettings.KEY_PROFILE_NAME, name.getText().toString().trim());
+            Intent intent = new Intent(Intent.ACTION_PICK, android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
+            intent.setType("image/*");
+            dialog.dismiss();
+            closeDialogs();
+            startActivityForResult(Intent.createChooser(intent, "選擇頭像照片"), REQUEST_PROFILE_AVATAR);
+        });
+        clear.setOnClickListener(v -> {
+            AppSettings.setString(this, AppSettings.KEY_PROFILE_AVATAR_FILE, "");
+            avatar.setImageBitmap(defaultAvatarBitmap(72));
+            Toast.makeText(this, "已清除頭像", Toast.LENGTH_SHORT).show();
+        });
+        cancel.setOnClickListener(v -> dialog.dismiss());
+        save.setOnClickListener(v -> {
+            AppSettings.setString(this, AppSettings.KEY_PROFILE_NAME, name.getText().toString().trim());
+            Toast.makeText(this, "已更新個人資料", Toast.LENGTH_SHORT).show();
+            dialog.dismiss();
+            showSideMenu();
+        });
+        showCustomDialog(dialog, panel);
+    }
+
+    private Bitmap defaultAvatarBitmap(int sizeDp) {
+        int size = dp(sizeDp);
+        Bitmap out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(out);
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        p.setColor(isDarkMode() ? 0xFF2A333F : 0xFFEAF4FF);
+        canvas.drawCircle(size / 2f, size / 2f, size / 2f, p);
+        p.setColor(isDarkMode() ? 0xFFF7FAFF : 0xFF4FADEB);
+        p.setTextAlign(Paint.Align.CENTER);
+        p.setTypeface(Typeface.DEFAULT_BOLD);
+        p.setTextSize(size * 0.42f);
+        Paint.FontMetrics fm = p.getFontMetrics();
+        String initial = profileName().isEmpty() ? "自" : profileName().substring(0, 1);
+        canvas.drawText(initial, size / 2f, size / 2f - (fm.ascent + fm.descent) / 2f, p);
+        return out;
+    }
+
+    private void showProfileAvatarCropDialog(Uri uri) {
+        Bitmap src = decodeWidgetSource(uri);
+        if (src == null) {
+            Toast.makeText(this, "讀不到這張圖片，請改從相簿選一張圖片", Toast.LENGTH_LONG).show();
+            showSideMenu();
+            return;
+        }
+        final AlertDialog dialog = new AlertDialog.Builder(this).create();
+        LinearLayout panel = dialogPanel(dp(30));
+        panel.addView(text("裁切頭像", 21, TEXT, true), marginLp(-1, -2, 0, 0, 0, dp(4)));
+        panel.addView(text("拖曳照片調整位置，雙指縮放。白色圓圈內就是側邊選單會顯示的頭像。", 13, MUTED, false), marginLp(-1, -2, 0, 0, 0, dp(10)));
+        PhotoCropView cropView = new PhotoCropView(this, src, 1f, true);
+        cropView.setBackground(round(CHIP, dp(22), BORDER));
+        panel.addView(cropView, marginLp(-1, dp(300), 0, 0, 0, dp(12)));
+        LinearLayout actions = dialogActionsRow();
+        Button cancel = pill("取消", CHIP, TEXT);
+        Button save = bigSave("✓ 儲存頭像");
+        actions.addView(cancel, marginLp(0, dp(52), 0, 0, dp(6), 0, 1));
+        actions.addView(save, marginLp(0, dp(52), dp(6), 0, 0, 0, 1));
+        panel.addView(actions);
+        cancel.setOnClickListener(v -> { dialog.dismiss(); showSideMenu(); });
+        save.setOnClickListener(v -> {
+            Bitmap crop = cropView.getCroppedBitmap(512, 512);
+            String path = saveProfileAvatar(crop);
+            if (path.isEmpty()) {
+                Toast.makeText(this, "儲存頭像失敗，請換一張圖試試", Toast.LENGTH_LONG).show();
+                return;
+            }
+            AppSettings.setString(this, AppSettings.KEY_PROFILE_AVATAR_FILE, path);
+            Toast.makeText(this, "已設定頭像", Toast.LENGTH_SHORT).show();
+            dialog.dismiss();
+            showSideMenu();
+        });
+        showCustomDialog(dialog, panel);
+    }
+
     private void showWidgetImageCropDialog(Uri uri) {
         Bitmap src = decodeWidgetSource(uri);
         if (src == null) {
@@ -1738,6 +2174,8 @@ public class MainActivity extends Activity {
         private final RectF cropRect = new RectF();
         private final RectF imageRect = new RectF();
         private final ScaleGestureDetector scaleDetector;
+        private final float aspect;
+        private final boolean ovalCrop;
         private float scale = 1f;
         private float minScale = 1f;
         private float tx = 0f;
@@ -1747,8 +2185,14 @@ public class MainActivity extends Activity {
         private boolean initialized = false;
 
         PhotoCropView(Context context, Bitmap source) {
+            this(context, source, 4f / 3f, false);
+        }
+
+        PhotoCropView(Context context, Bitmap source, float aspect, boolean ovalCrop) {
             super(context);
             src = source;
+            this.aspect = aspect <= 0 ? 4f / 3f : aspect;
+            this.ovalCrop = ovalCrop;
             setWillNotDraw(false);
             setLayerType(View.LAYER_TYPE_SOFTWARE, null);
             shadePaint.setColor(0x99000000);
@@ -1783,10 +2227,10 @@ public class MainActivity extends Activity {
             float maxW = Math.max(1, w - pad * 2);
             float maxH = Math.max(1, h - pad * 2);
             float cw = maxW;
-            float ch = cw * 3f / 4f;
+            float ch = cw / aspect;
             if (ch > maxH) {
                 ch = maxH;
-                cw = ch * 4f / 3f;
+                cw = ch * aspect;
             }
             float left = (w - cw) / 2f;
             float top = (h - ch) / 2f;
@@ -1851,7 +2295,8 @@ public class MainActivity extends Activity {
             canvas.drawRect(0, cropRect.bottom, getWidth(), getHeight(), shadePaint);
             canvas.drawRect(0, cropRect.top, cropRect.left, cropRect.bottom, shadePaint);
             canvas.drawRect(cropRect.right, cropRect.top, getWidth(), cropRect.bottom, shadePaint);
-            canvas.drawRoundRect(cropRect, dp(20), dp(20), borderPaint);
+            if (ovalCrop) canvas.drawOval(cropRect, borderPaint);
+            else canvas.drawRoundRect(cropRect, dp(20), dp(20), borderPaint);
             canvas.restoreToCount(save);
         }
 
@@ -2306,7 +2751,7 @@ public class MainActivity extends Activity {
         advanced.addView(featureRow("月底預估花費", "依照目前花費速度推估月底可能花多少"));
         box.addView(advanced);
 
-        TextView version = text("AutoLedger V33", 12, MUTED, false);
+        TextView version = text("AutoLedger V34", 12, MUTED, false);
         version.setGravity(Gravity.CENTER);
         version.setPadding(0, dp(16), 0, dp(10));
         box.addView(version);
@@ -2564,13 +3009,13 @@ public class MainActivity extends Activity {
 
     private void showOnboarding() {
         showRoundedInfoDialog(
-                "歡迎使用自動記帳 V33",
+                "歡迎使用自動記帳 V34",
                 "這版新增 / 優化：\n\n" +
-                        "1. 中國信託 / 銀行轉帳給朋友會優先判成支出。\n" +
-                        "2. 點數 / 優惠折抵合併改得更保守，避免不同消費被混成同一筆。\n" +
-                        "3. 自動通知會保留來源、店家與粗分類，最近記錄更好辨認。\n" +
-                        "4. 首頁、卡片、底部導覽與快速新增按鈕視覺重新整理。\n" +
-                        "5. GitHub Actions 可直接在雲端打包 Debug APK。",
+                        "1. 甜甜圈圖文字改到中間與圖例，不再壓在圓圈上。\n" +
+                        "2. 財務報表新增花費節奏、分類排行與重點提醒。\n" +
+                        "3. 側邊選單加入更多記帳常用工具，移除重複報表入口。\n" +
+                        "4. 可自訂側邊選單名稱與圓形頭像。\n" +
+                        "5. 新增功能搜尋，輸入關鍵字就能快速跳到工具。",
                 "我知道了",
                 v -> AppSettings.setBool(this, AppSettings.KEY_ONBOARDED, true),
                 "通知用途",

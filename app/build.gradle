@@ -10,8 +10,8 @@ android {
         applicationId 'com.enyu.autoledger'
         minSdk 26
         targetSdk 35
-        versionCode 33
-        versionName '1.0.0-v33-transfer-dedupe-ui'
+        versionCode 34
+        versionName '1.0.0-v34-report-profile-search'
     }
 
     signingConfigs {

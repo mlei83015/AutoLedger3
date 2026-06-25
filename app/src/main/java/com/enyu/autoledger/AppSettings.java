@@ -28,7 +28,7 @@ public class AppSettings {
     public static final String KEY_THEME = "theme";
     public static final String KEY_PALETTE = "palette";
     public static final String KEY_MONTHLY_BUDGET = "monthly_budget";
-    public static final String KEY_ONBOARDED = "onboarded_v33";
+    public static final String KEY_ONBOARDED = "onboarded_v34";
     public static final String KEY_NOTIFY_DAILY = "notify_daily_report";
     public static final String KEY_NOTIFY_AUTO_SAVED = "notify_auto_saved";
     public static final String KEY_NOTIFY_BUDGET = "notify_budget";
@@ -38,6 +38,8 @@ public class AppSettings {
     public static final String KEY_WIDGET_IMAGE_URI = "widget_image_uri";
     public static final String KEY_WIDGET_IMAGE_FILE = "widget_image_file";
     public static final String KEY_WIDGET_IMAGE_HEIGHT = "widget_image_height";
+    public static final String KEY_PROFILE_NAME = "profile_name";
+    public static final String KEY_PROFILE_AVATAR_FILE = "profile_avatar_file";
     public static final String KEY_MONTHLY_EXTRA_PREFIX = "monthly_extra_";
     public static final String KEY_MONTHLY_BALANCE_ADJUST_PREFIX = "monthly_balance_adjust_";
     public static final String KEY_MONTHLY_OPENING_SPENT_PREFIX = "monthly_opening_spent_";

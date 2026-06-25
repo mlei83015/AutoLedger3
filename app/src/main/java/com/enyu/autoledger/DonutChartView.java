@@ -92,9 +92,8 @@ public class DonutChartView extends View {
         int w = getWidth();
         int h = getHeight();
         int total = Math.max(1, primary + secondary + third);
-        float stroke = Math.max(dp(18), w * 0.14f);
-        float labelPad = w >= dp(205) ? dp(34) : dp(22);
-        float pad = stroke / 2f + labelPad;
+        float stroke = Math.max(dp(18), w * 0.15f);
+        float pad = stroke / 2f + dp(8);
         RectF ring = new RectF(pad, pad, w - pad, h - pad);
 
         ringPaint.setStyle(Paint.Style.STROKE);
@@ -109,12 +108,7 @@ public class DonutChartView extends View {
         start = drawSegment(canvas, ring, start, secondary, total, colorSecondary, gap);
         drawSegment(canvas, ring, start, third, total, colorThird, gap);
 
-        textPaint.setTypeface(android.graphics.Typeface.DEFAULT);
-        textPaint.setTextSize(w >= dp(205) ? dp(12) : dp(9));
-        textPaint.setColor(darkMode ? 0xFFF7FAFF : 0xFF20242B);
-        drawOutsideLabel(canvas, ring, -90f, primary, total, primaryLabel);
-        drawOutsideLabel(canvas, ring, -90f + 360f * primary / total, secondary, total, secondaryLabel);
-        drawOutsideLabel(canvas, ring, -90f + 360f * (primary + secondary) / total, third, total, thirdLabel);
+        drawCenterLabel(canvas, total);
     }
 
     private float drawSegment(Canvas canvas, RectF ring, float start, int value, int total, int color, float gap) {
@@ -126,26 +120,19 @@ public class DonutChartView extends View {
         return start + sweep;
     }
 
-    private void drawOutsideLabel(Canvas canvas, RectF ring, float start, int value, int total, String label) {
-        if (value <= 0 || total <= 0) return;
-        float sweep = 360f * value / total;
-        if (sweep < 7f) return;
-        float angle = (float) Math.toRadians(start + sweep / 2f);
-        float cx = ring.centerX();
-        float cy = ring.centerY();
-        float radius = ring.width() / 2f + (getWidth() >= dp(205) ? dp(24) : dp(14));
-        float x = cx + (float) Math.cos(angle) * radius;
-        float y = cy + (float) Math.sin(angle) * radius;
-        int pct = Math.round(value * 100f / Math.max(1, total));
-        String text = label + "\n" + pct + "%";
-        String[] lines = text.split("\\n");
-        Paint.Align old = textPaint.getTextAlign();
-        if (x < cx - dp(8)) textPaint.setTextAlign(Paint.Align.RIGHT);
-        else if (x > cx + dp(8)) textPaint.setTextAlign(Paint.Align.LEFT);
-        else textPaint.setTextAlign(Paint.Align.CENTER);
-        canvas.drawText(lines[0], x, y - dp(3), textPaint);
-        canvas.drawText(lines.length > 1 ? lines[1] : "", x, y + dp(12), textPaint);
-        textPaint.setTextAlign(old);
+    private void drawCenterLabel(Canvas canvas, int total) {
+        float cx = getWidth() / 2f;
+        float cy = getHeight() / 2f;
+        int pct = Math.round(primary * 100f / Math.max(1, total));
+        textPaint.setTextAlign(Paint.Align.CENTER);
+        textPaint.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        textPaint.setColor(darkMode ? 0xFFF7FAFF : 0xFF20242B);
+        textPaint.setTextSize(getWidth() >= dp(205) ? dp(18) : dp(14));
+        canvas.drawText(centerLabel, cx, cy - dp(4), textPaint);
+        textPaint.setTypeface(android.graphics.Typeface.DEFAULT);
+        textPaint.setColor(darkMode ? 0xFFAAB3C2 : 0xFF687282);
+        textPaint.setTextSize(getWidth() >= dp(205) ? dp(13) : dp(10));
+        canvas.drawText(pct + "%", cx, cy + dp(16), textPaint);
     }
 
     public int spentColor() { return colorPrimary; }
