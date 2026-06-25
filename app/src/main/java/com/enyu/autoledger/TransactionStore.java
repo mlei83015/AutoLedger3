@@ -25,6 +25,7 @@ public class TransactionStore {
 
     public static synchronized boolean add(Context context, Transaction tx) {
         if (tx == null || tx.amount <= 0) return false;
+        AppSettings.ensureMonthlyRemainingBalance(context);
         SharedPreferences sp = context.getSharedPreferences(PREF, Context.MODE_PRIVATE);
         Set<String> seen = new HashSet<>(sp.getStringSet(KEY_SEEN, new HashSet<String>()));
         if (tx.hash != null && !tx.hash.isEmpty() && seen.contains(tx.hash)) {
@@ -41,9 +42,28 @@ public class TransactionStore {
         }
         list.add(tx);
         saveAll(context, list);
+        applyBudgetImpactForNewTransaction(context, tx);
         markSeen(sp, seen, tx);
         log(context, "新增成功｜" + summary(tx));
         return true;
+    }
+
+    private static void applyBudgetImpactForNewTransaction(Context context, Transaction tx) {
+        if (tx == null) return;
+        AppSettings.ensureMonthlyRemainingBalance(context);
+        if ("expense".equals(tx.direction)) {
+            AppSettings.addToCurrentRemainingBalance(context, -Math.max(0, tx.amount));
+        }
+        // V32：收入預設不加回剩餘餘額；只有手動新增收入勾選「加回」時，畫面會另外呼叫 addToCurrentRemainingBalance。
+    }
+
+    private static void applyBudgetImpactForReplacement(Context context, Transaction oldTx, Transaction newTx) {
+        if (oldTx == null || newTx == null) return;
+        AppSettings.ensureMonthlyRemainingBalance(context);
+        int oldImpact = "expense".equals(oldTx.direction) ? -Math.max(0, oldTx.amount) : 0;
+        int newImpact = "expense".equals(newTx.direction) ? -Math.max(0, newTx.amount) : 0;
+        int delta = newImpact - oldImpact;
+        if (delta != 0) AppSettings.addToCurrentRemainingBalance(context, delta);
     }
 
 
@@ -63,6 +83,7 @@ public class TransactionStore {
     }
 
     private static boolean mergePointDiscountIfNeeded(Context context, List<Transaction> list, Transaction tx) {
+        // V33：禁止跨通知折抵合併。折抵只能從同一則通知內解析，避免 Google 錢包 20 + 銀行轉帳 90 被誤合成折抵 70。
         if (tx == null || tx.hash == null || tx.hash.startsWith("manual-") || !"expense".equals(tx.direction)) return false;
         String newType = sourceType(tx);
         if (!isPaymentSignal(newType)) return false;
@@ -91,10 +112,11 @@ public class TransactionStore {
             // 只把另一筆金額等於「原價」或「實付」的通知視為同一筆；
             // 不再用最大值/最小值硬猜，避免 LINE Pay 使用 3 點被誤判成折抵 128 元。
             if (old.discountAmount > 0 || tx.discountAmount > 0 || old.originalAmount > 0 || tx.originalAmount > 0) {
-                if (explicitDiscountRelated(old, tx) && knownPair && diff <= 72L * 60L * 60L * 1000L && (sameDate || sameMerchant || diff <= 45L * 60L * 1000L)) {
+                if (false && explicitDiscountRelated(old, tx) && knownPair && diff <= 72L * 60L * 60L * 1000L && (sameDate || sameMerchant || diff <= 45L * 60L * 1000L)) {
                     Transaction merged = buildExplicitDiscountMergedTransaction(old, tx);
                     list.set(i, merged);
                     saveAll(context, list);
+                    applyBudgetImpactForReplacement(context, old, merged);
                     log(context, "V31 明確點數/優惠通知合併｜原價 " + money(merged.originalAmount) + "｜實付 " + money(merged.amount) + "｜折抵 " + money(merged.discountAmount));
                     return true;
                 }
@@ -110,10 +132,11 @@ public class TransactionStore {
             boolean delayedInvoice = isInvoiceWithWalletBank(oldType, newType) && diff <= 72L * 60L * 60L * 1000L && (sameDate || sameMerchant);
             boolean delayedLineBank = isLineBankWalletPair(oldType, newType) && diff <= 12L * 60L * 60L * 1000L && (sameDate && sameMerchant);
 
-            if (knownPair && reasonableDiscount && (strongTiming || delayedInvoice || delayedLineBank)) {
+            if (false && knownPair && reasonableDiscount && (strongTiming || delayedInvoice || delayedLineBank)) {
                 Transaction merged = buildDiscountMergedTransaction(old, tx);
                 list.set(i, merged);
                 saveAll(context, list);
+                applyBudgetImpactForReplacement(context, old, merged);
                 log(context, "V23 點數/優惠折抵合併｜原價 " + money(merged.originalAmount) + "｜實付 " + money(merged.amount) + "｜折抵 " + money(merged.discountAmount));
                 return true;
             }
@@ -372,9 +395,11 @@ public class TransactionStore {
         if (edited == null || edited.amount <= 0) return false;
         List<Transaction> list = getAll(context);
         boolean updated = false;
+        Transaction old = null;
         for (int i = 0; i < list.size(); i++) {
             Transaction t = list.get(i);
             if (sameIdentity(t, originalHash, originalTime)) {
+                old = t;
                 list.set(i, edited);
                 updated = true;
                 break;
@@ -382,6 +407,7 @@ public class TransactionStore {
         }
         if (updated) {
             saveAll(context, list);
+            applyBudgetImpactForReplacement(context, old, edited);
             log(context, "修改紀錄｜" + summary(edited));
         }
         return updated;
@@ -390,16 +416,23 @@ public class TransactionStore {
     public static synchronized boolean delete(Context context, String hash, long timeMillis) {
         List<Transaction> list = getAll(context);
         boolean removed = false;
+        Transaction removedTx = null;
         for (int i = list.size() - 1; i >= 0; i--) {
             Transaction t = list.get(i);
             if (sameIdentity(t, hash, timeMillis)) {
                 log(context, "刪除紀錄｜" + summary(t));
+                removedTx = t;
                 list.remove(i);
                 removed = true;
                 break;
             }
         }
-        if (removed) saveAll(context, list);
+        if (removed) {
+            saveAll(context, list);
+            if (removedTx != null && "expense".equals(removedTx.direction)) {
+                AppSettings.addToCurrentRemainingBalance(context, Math.max(0, removedTx.amount));
+            }
+        }
         return removed;
     }
 
@@ -431,14 +464,23 @@ public class TransactionStore {
         });
         List<Transaction> kept = new ArrayList<>();
         int removed = 0;
+        int removedCurrentMonthExpense = 0;
+        long monthStart = startOfMonth(0);
+        long monthEnd = startOfMonth(1);
         for (Transaction tx : chronological) {
             if (AppSettings.getBool(context, AppSettings.KEY_DEDUPE, true) && looksDuplicate(context, kept, tx)) {
                 removed++;
+                if (tx != null && "expense".equals(tx.direction) && tx.timeMillis >= monthStart && tx.timeMillis < monthEnd) {
+                    removedCurrentMonthExpense += Math.max(0, tx.amount);
+                }
             } else {
                 kept.add(tx);
             }
         }
-        if (removed > 0) saveAll(context, kept);
+        if (removed > 0) {
+            saveAll(context, kept);
+            if (removedCurrentMonthExpense > 0) AppSettings.addToCurrentRemainingBalance(context, removedCurrentMonthExpense);
+        }
         log(context, "自動除錯完成｜移除疑似重複 " + removed + " 筆");
         return removed;
     }
@@ -496,7 +538,7 @@ public class TransactionStore {
     }
 
     public static int totalBalance(Context context) {
-        return AppSettings.getMonthlyBudget(context) + totalIncome(context) - totalExpense(context) + AppSettings.getMonthlyBalanceAdjust(context);
+        return AppSettings.getCurrentRemainingBalance(context);
     }
 
     public static int monthExpense(Context context) {
@@ -508,11 +550,11 @@ public class TransactionStore {
     }
 
     public static int effectiveMonthExpense(Context context) {
-        return monthExpense(context) + AppSettings.getMonthlyOpeningSpent(context);
+        return Math.max(0, AppSettings.getMonthlyUsableBudget(context) - AppSettings.getCurrentRemainingBalance(context));
     }
 
     public static int monthBudgetRemaining(Context context) {
-        return Math.max(0, AppSettings.getMonthlyUsableBudget(context) - effectiveMonthExpense(context));
+        return Math.max(0, AppSettings.getCurrentRemainingBalance(context));
     }
 
     public static int forecastMonthExpense(Context context) {
