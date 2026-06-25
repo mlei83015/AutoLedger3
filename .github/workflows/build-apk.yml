@@ -24,7 +24,28 @@ jobs:
           gradle-version: '8.9'
 
       - name: Build Debug APK
-        run: gradle :app:assembleDebug --no-daemon
+        shell: bash
+        run: |
+          set +e
+          gradle :app:assembleDebug --no-daemon --stacktrace 2>&1 | tee build-output.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            echo "Gradle build failed. Last lines are also emitted as annotations."
+            tail -n 80 build-output.log | while IFS= read -r line; do
+              line="${line//'%'/'%25'}"
+              line="${line//$'\n'/'%0A'}"
+              line="${line//$'\r'/'%0D'}"
+              echo "::error title=Gradle build::$line"
+            done
+          fi
+          exit "$status"
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AutoLedger-build-log
+          path: build-output.log
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
