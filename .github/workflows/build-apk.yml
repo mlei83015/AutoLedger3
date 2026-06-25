@@ -30,13 +30,12 @@ jobs:
           gradle :app:assembleDebug --no-daemon --stacktrace 2>&1 | tee build-output.log
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then
-            echo "Gradle build failed. Last lines are also emitted as annotations."
-            tail -n 80 build-output.log | while IFS= read -r line; do
-              line="${line//'%'/'%25'}"
-              line="${line//$'\n'/'%0A'}"
-              line="${line//$'\r'/'%0D'}"
-              echo "::error title=Gradle build::$line"
-            done
+            echo "Gradle build failed. Full output is also emitted as one annotation."
+            output="$(cat build-output.log)"
+            output="${output//'%'/'%25'}"
+            output="${output//$'\n'/'%0A'}"
+            output="${output//$'\r'/'%0D'}"
+            echo "::error title=Full Gradle build output::$output"
           fi
           exit "$status"
 
