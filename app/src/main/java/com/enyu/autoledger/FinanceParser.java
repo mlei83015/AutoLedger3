@@ -122,8 +122,8 @@ public class FinanceParser {
     private static int linePayPointDiscount(String s) {
         if (s == null) return 0;
         Pattern[] patterns = new Pattern[]{
-                Pattern.compile("(?:使用|使用了|折抵|扣抵)?\s*(?:LINE\s*)?(?:POINTS?|Points?|點數)[^0-9]{0,12}([0-9,]+)\s*(?:點|元)?", Pattern.CASE_INSENSITIVE),
-                Pattern.compile("([0-9,]+)\s*(?:點|元)?[^0-9]{0,12}(?:LINE\s*)?(?:POINTS?|Points?|點數)(?:折抵|扣抵)?", Pattern.CASE_INSENSITIVE)
+                Pattern.compile("(?:使用|使用了|折抵|扣抵)?\\s*(?:LINE\\s*)?(?:POINTS?|Points?|點數)[^0-9]{0,12}([0-9,]+)\\s*(?:點|元)?", Pattern.CASE_INSENSITIVE),
+                Pattern.compile("([0-9,]+)\\s*(?:點|元)?[^0-9]{0,12}(?:LINE\\s*)?(?:POINTS?|Points?|點數)(?:折抵|扣抵)?", Pattern.CASE_INSENSITIVE)
         };
         for (Pattern p : patterns) {
             Matcher m = p.matcher(s);
