@@ -79,15 +79,23 @@ public class FinanceParser {
         int discount = explicitLinePayPoints > 0 ? explicitLinePayPoints : amountAfterKeys(s, DISCOUNT_KEYS);
         List<Integer> all = allAmounts(s);
 
-        // V31 修正版：LINE Pay 常見格式是「付款 NT$ 131」＋「使用點數：3 點」。
-        // 這種一定要解讀為原價 131、折抵 3、實付 128，不能把最小數字 3 當成實付金額。
+        // V35 修正版：LINE Pay 畫面/通知的「付款 NT$ 27」通常就是實際刷卡或錢包扣款。
+        // 如果同時有「使用點數 3 點」，原價應該是 30，不能再把 27 - 3 記成 24。
         boolean hasExplicitLinePayPoints = explicitLinePayPoints > 0 && containsAnyIgnoreCase(s, "line pay", "linepay", "line錢包");
         if (actual > 0) info.actualAmount = actual;
         if (original > 0) info.originalAmount = original;
         if (discount > 0) info.discountAmount = discount;
 
-        if (hasExplicitLinePayPoints && info.originalAmount > info.discountAmount) {
-            info.actualAmount = info.originalAmount - info.discountAmount;
+        if (hasExplicitLinePayPoints) {
+            int paid = info.actualAmount > 0 ? info.actualAmount : linePayPaymentAmount(s);
+            if (paid <= 0) paid = extractAmount(s);
+            if (paid > 0) {
+                info.actualAmount = paid;
+                int impliedOriginal = paid + Math.max(0, info.discountAmount);
+                if (impliedOriginal > paid && info.originalAmount < impliedOriginal) {
+                    info.originalAmount = impliedOriginal;
+                }
+            }
             return info;
         }
 
@@ -117,6 +125,25 @@ public class FinanceParser {
             info.discountAmount = info.originalAmount - info.actualAmount;
         }
         return info;
+    }
+
+    private static int linePayPaymentAmount(String s) {
+        if (s == null) return 0;
+        Pattern[] patterns = new Pattern[]{
+                Pattern.compile("(?:LINE\\s*)?Pay[^\\n]{0,40}(?:付款|支付|扣款|付款完成|支付完成)[^0-9]{0,16}(?:NT\\$|NTD|TWD|\\$)?\\s*([0-9,]+)", Pattern.CASE_INSENSITIVE),
+                Pattern.compile("(?:付款|支付|扣款)[^\\n]{0,16}(?:NT\\$|NTD|TWD|\\$)\\s*([0-9,]+)", Pattern.CASE_INSENSITIVE),
+                Pattern.compile("(?:NT\\$|NTD|TWD|\\$)\\s*([0-9,]+)[^\\n]{0,24}(?:付款完成|支付完成|付款|支付)", Pattern.CASE_INSENSITIVE)
+        };
+        for (Pattern p : patterns) {
+            Matcher m = p.matcher(s);
+            if (m.find()) {
+                try {
+                    int v = Integer.parseInt(m.group(1).replace(",", ""));
+                    if (v > 0 && v < 1000000) return v;
+                } catch (Exception ignored) { }
+            }
+        }
+        return 0;
     }
 
     private static int linePayPointDiscount(String s) {

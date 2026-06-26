@@ -77,6 +77,8 @@ public class MainActivity extends Activity {
     private String manualDirection = "expense";
     private String reportType = "expense";
     private String reportRange = "month";
+    private long calendarMonthMillis = System.currentTimeMillis();
+    private long calendarFocusedDayMillis = -1L;
 
     private int BG = 0xFFF6F7FB;
     private int CARD = 0xFFFFFFFF;
@@ -169,6 +171,10 @@ public class MainActivity extends Activity {
         if (tab == 0) showHome();
         else if (tab == 1) showManual(manualDirection);
         else if (tab == 2) showStats();
+        else if (tab == 4) {
+            if (calendarFocusedDayMillis > 0) showCalendarDay(calendarFocusedDayMillis);
+            else showCalendarMonth(calendarMonthMillis);
+        }
         else showSettings();
     }
 
@@ -359,6 +365,11 @@ public class MainActivity extends Activity {
         bell.setBackground(round(CHIP, dp(18), BORDER));
         bell.setOnClickListener(v -> showNotificationSettingsDialog());
         titleRow.addView(bell, new LinearLayout.LayoutParams(dp(38), dp(38)));
+        TextView calendar = text("📅", 21, TEXT, false);
+        calendar.setGravity(Gravity.CENTER);
+        calendar.setBackground(round(CHIP, dp(18), BORDER));
+        calendar.setOnClickListener(v -> showCalendarMonth(System.currentTimeMillis()));
+        titleRow.addView(calendar, marginLp(dp(38), dp(38), dp(8), 0, 0, 0));
         box.addView(titleRow);
 
         if (!isNotificationListenerEnabled()) {
@@ -491,6 +502,305 @@ public class MainActivity extends Activity {
         box.addView(list);
 
         setPage(scroll);
+    }
+
+    private void showCalendarMonth(long monthMillis) {
+        tab = 4;
+        calendarFocusedDayMillis = -1L;
+        calendarMonthMillis = calendarMonthStart(monthMillis);
+        applyModeColors();
+
+        ScrollView scroll = pageBase();
+        LinearLayout box = pageBox(scroll);
+        box.setPadding(dp(14), dp(8), dp(14), dp(16));
+
+        LinearLayout top = new LinearLayout(this);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        TextView back = text("‹", 32, TEXT, false);
+        back.setGravity(Gravity.CENTER);
+        back.setOnClickListener(v -> showHome());
+        top.addView(back, new LinearLayout.LayoutParams(dp(38), dp(42)));
+
+        TextView prev = text("‹", 28, TEXT, true);
+        prev.setGravity(Gravity.CENTER);
+        prev.setBackground(round(CHIP, dp(16), BORDER));
+        prev.setOnClickListener(v -> showCalendarMonth(calendarMonthOffset(calendarMonthMillis, -1)));
+        top.addView(prev, marginLp(dp(40), dp(38), 0, 0, dp(8), 0));
+
+        TextView title = text(formatCalendarMonth(calendarMonthMillis), 22, TEXT, true);
+        title.setGravity(Gravity.CENTER);
+        top.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
+
+        TextView next = text("›", 28, TEXT, true);
+        next.setGravity(Gravity.CENTER);
+        next.setBackground(round(CHIP, dp(16), BORDER));
+        next.setOnClickListener(v -> showCalendarMonth(calendarMonthOffset(calendarMonthMillis, 1)));
+        top.addView(next, marginLp(dp(40), dp(38), dp(8), 0, 0, 0));
+        box.addView(top, marginLp(-1, -2, 0, 0, 0, dp(10)));
+
+        long monthStart = calendarMonthMillis;
+        long monthEnd = calendarMonthOffset(monthStart, 1);
+        List<Transaction> monthTxs = transactionsBetween(monthStart, monthEnd);
+        int monthExpense = totalFor(monthTxs, "expense");
+        int monthIncome = totalFor(monthTxs, "income");
+        int budget = Math.max(1, AppSettings.getMonthlyUsableBudget(this));
+        int remaining = isSameMonth(monthStart, System.currentTimeMillis())
+                ? Math.max(0, AppSettings.getCurrentRemainingBalance(this))
+                : Math.max(0, budget - monthExpense);
+        int count = monthTxs.size();
+
+        LinearLayout summary = card();
+        summary.setPadding(dp(16), dp(14), dp(16), dp(14));
+        summary.addView(text("月曆帳本", 18, TEXT, true), marginLp(-1, -2, 0, 0, 0, dp(8)));
+        LinearLayout row1 = new LinearLayout(this);
+        row1.setOrientation(LinearLayout.HORIZONTAL);
+        row1.addView(calendarMetric("剩餘", TransactionStore.money(remaining), GREEN), marginLp(0, -2, 0, 0, dp(8), 0, 1));
+        row1.addView(calendarMetric("支出", TransactionStore.money(monthExpense), EXPENSE_RED), marginLp(0, -2, dp(8), 0, 0, 0, 1));
+        summary.addView(row1, marginLp(-1, -2, 0, 0, 0, dp(8)));
+        LinearLayout row2 = new LinearLayout(this);
+        row2.setOrientation(LinearLayout.HORIZONTAL);
+        row2.addView(calendarMetric("收入", TransactionStore.money(monthIncome), SOFT_BLUE), marginLp(0, -2, 0, 0, dp(8), 0, 1));
+        row2.addView(calendarMetric("預算", TransactionStore.money(budget), ORANGE), marginLp(0, -2, dp(8), 0, 0, 0, 1));
+        summary.addView(row2);
+        summary.addView(text("本月 " + count + " 筆紀錄", 13, MUTED, false), marginLp(-1, -2, 0, dp(10), 0, 0));
+        box.addView(summary, marginLp(-1, -2, 0, 0, 0, dp(12)));
+
+        addCalendarGrid(box, monthStart, monthTxs);
+        setPage(scroll);
+    }
+
+    private LinearLayout calendarMetric(String label, String value, int color) {
+        LinearLayout block = new LinearLayout(this);
+        block.setOrientation(LinearLayout.VERTICAL);
+        block.setPadding(dp(4), dp(2), dp(4), dp(2));
+        block.addView(text(label, 12, MUTED, false));
+        block.addView(text(value, 20, color, true));
+        return block;
+    }
+
+    private void addCalendarGrid(LinearLayout box, long monthStart, List<Transaction> monthTxs) {
+        LinearLayout grid = card();
+        grid.setPadding(dp(8), dp(10), dp(8), dp(10));
+
+        LinearLayout week = new LinearLayout(this);
+        week.setOrientation(LinearLayout.HORIZONTAL);
+        String[] names = new String[]{"一", "二", "三", "四", "五", "六", "日"};
+        for (String name : names) {
+            TextView w = text(name, 12, MUTED, true);
+            w.setGravity(Gravity.CENTER);
+            week.addView(w, new LinearLayout.LayoutParams(0, dp(26), 1));
+        }
+        grid.addView(week);
+
+        Calendar c = Calendar.getInstance();
+        c.setTimeInMillis(monthStart);
+        int maxDay = c.getActualMaximum(Calendar.DAY_OF_MONTH);
+        int firstDayOfWeek = c.get(Calendar.DAY_OF_WEEK);
+        int leading = (firstDayOfWeek + 5) % 7;
+        int totalCells = ((leading + maxDay + 6) / 7) * 7;
+        int[] dayExpense = new int[maxDay + 1];
+        int[] dayIncome = new int[maxDay + 1];
+        int[] dayCount = new int[maxDay + 1];
+        if (monthTxs != null) {
+            Calendar txCal = Calendar.getInstance();
+            for (Transaction t : monthTxs) {
+                if (t == null) continue;
+                txCal.setTimeInMillis(t.timeMillis);
+                int day = txCal.get(Calendar.DAY_OF_MONTH);
+                if (day < 1 || day > maxDay) continue;
+                dayCount[day]++;
+                if ("expense".equals(t.direction)) dayExpense[day] += Math.max(0, t.amount);
+                else if ("income".equals(t.direction)) dayIncome[day] += Math.max(0, t.amount);
+            }
+        }
+
+        for (int cell = 0; cell < totalCells; cell += 7) {
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            for (int x = 0; x < 7; x++) {
+                int index = cell + x;
+                int day = index - leading + 1;
+                View dayCell;
+                if (day < 1 || day > maxDay) {
+                    dayCell = emptyCalendarCell();
+                } else {
+                    dayCell = calendarDayCell(calendarDayOfMonth(monthStart, day), dayExpense[day], dayIncome[day], dayCount[day]);
+                }
+                row.addView(dayCell, marginLp(0, dp(72), dp(2), dp(2), dp(2), dp(2), 1));
+            }
+            grid.addView(row);
+        }
+
+        box.addView(grid);
+    }
+
+    private View emptyCalendarCell() {
+        LinearLayout cell = new LinearLayout(this);
+        cell.setOrientation(LinearLayout.VERTICAL);
+        return cell;
+    }
+
+    private View calendarDayCell(long dayStart, int expense, int income, int count) {
+        boolean today = sameCalendarDay(dayStart, System.currentTimeMillis());
+
+        LinearLayout cell = new LinearLayout(this);
+        cell.setOrientation(LinearLayout.VERTICAL);
+        cell.setGravity(Gravity.CENTER_HORIZONTAL);
+        cell.setPadding(dp(3), dp(5), dp(3), dp(3));
+        int bg = today ? (isDarkMode() ? 0xFF304052 : 0xFFFFF4DA) : (isDarkMode() ? 0xFF111923 : 0xFFF7FAFC);
+        int stroke = today ? ORANGE : BORDER;
+        cell.setBackground(round(bg, dp(12), stroke));
+        cell.setOnClickListener(v -> showCalendarDay(dayStart));
+
+        Calendar c = Calendar.getInstance();
+        c.setTimeInMillis(dayStart);
+        TextView day = text(String.valueOf(c.get(Calendar.DAY_OF_MONTH)), 14, TEXT, true);
+        day.setGravity(Gravity.CENTER);
+        cell.addView(day);
+
+        TextView spent = text(expense > 0 ? "-" + moneyShort(expense) : "", 10, EXPENSE_RED, true);
+        spent.setGravity(Gravity.CENTER);
+        spent.setSingleLine(true);
+        cell.addView(spent, new LinearLayout.LayoutParams(-1, dp(16)));
+
+        TextView earned = text(income > 0 ? "+" + moneyShort(income) : (count > 0 ? count + "筆" : ""), 10, income > 0 ? GREEN : MUTED, false);
+        earned.setGravity(Gravity.CENTER);
+        earned.setSingleLine(true);
+        cell.addView(earned, new LinearLayout.LayoutParams(-1, dp(16)));
+        return cell;
+    }
+
+    private void showCalendarDay(long dayMillis) {
+        tab = 4;
+        calendarFocusedDayMillis = calendarDayStart(dayMillis);
+        calendarMonthMillis = calendarMonthStart(dayMillis);
+        applyModeColors();
+
+        ScrollView scroll = pageBase();
+        LinearLayout box = pageBox(scroll);
+        box.setPadding(dp(14), dp(8), dp(14), dp(16));
+
+        LinearLayout top = new LinearLayout(this);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        TextView back = text("‹", 32, TEXT, false);
+        back.setGravity(Gravity.CENTER);
+        back.setOnClickListener(v -> showCalendarMonth(calendarMonthMillis));
+        top.addView(back, new LinearLayout.LayoutParams(dp(38), dp(42)));
+        TextView title = text(formatCalendarDate(calendarFocusedDayMillis), 20, TEXT, true);
+        title.setGravity(Gravity.CENTER);
+        top.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
+        TextView home = text("⌂", 23, TEXT, true);
+        home.setGravity(Gravity.CENTER);
+        home.setBackground(round(CHIP, dp(16), BORDER));
+        home.setOnClickListener(v -> showHome());
+        top.addView(home, new LinearLayout.LayoutParams(dp(40), dp(38)));
+        box.addView(top, marginLp(-1, -2, 0, 0, 0, dp(10)));
+
+        long dayStart = calendarFocusedDayMillis;
+        long dayEnd = calendarDayOffset(dayStart, 1);
+        List<Transaction> txs = transactionsBetween(dayStart, dayEnd);
+        int expense = totalFor(txs, "expense");
+        int income = totalFor(txs, "income");
+        int count = txs.size();
+
+        LinearLayout summary = card();
+        summary.setPadding(dp(16), dp(14), dp(16), dp(14));
+        summary.addView(text("當日摘要", 18, TEXT, true), marginLp(-1, -2, 0, 0, 0, dp(8)));
+        LinearLayout metrics = new LinearLayout(this);
+        metrics.setOrientation(LinearLayout.HORIZONTAL);
+        metrics.addView(calendarMetric("支出", TransactionStore.money(expense), EXPENSE_RED), marginLp(0, -2, 0, 0, dp(6), 0, 1));
+        metrics.addView(calendarMetric("收入", TransactionStore.money(income), GREEN), marginLp(0, -2, dp(6), 0, dp(6), 0, 1));
+        metrics.addView(calendarMetric("筆數", count + " 筆", SOFT_BLUE), marginLp(0, -2, dp(6), 0, 0, 0, 1));
+        summary.addView(metrics);
+        box.addView(summary, marginLp(-1, -2, 0, 0, 0, dp(12)));
+
+        LinearLayout list = card();
+        list.setPadding(dp(4), dp(6), dp(4), dp(6));
+        if (txs.isEmpty()) {
+            TextView empty = text("這一天還沒有紀錄。", 15, MUTED, false);
+            empty.setGravity(Gravity.CENTER);
+            empty.setPadding(dp(12), dp(20), dp(12), dp(20));
+            list.addView(empty);
+        } else {
+            for (Transaction t : txs) {
+                list.addView(transactionRow(t));
+            }
+        }
+        box.addView(list);
+
+        setPage(scroll);
+    }
+
+    private long calendarMonthStart(long time) {
+        Calendar c = Calendar.getInstance();
+        c.setTimeInMillis(time);
+        c.set(Calendar.DAY_OF_MONTH, 1);
+        c.set(Calendar.HOUR_OF_DAY, 0);
+        c.set(Calendar.MINUTE, 0);
+        c.set(Calendar.SECOND, 0);
+        c.set(Calendar.MILLISECOND, 0);
+        return c.getTimeInMillis();
+    }
+
+    private long calendarMonthOffset(long time, int months) {
+        Calendar c = Calendar.getInstance();
+        c.setTimeInMillis(calendarMonthStart(time));
+        c.add(Calendar.MONTH, months);
+        return c.getTimeInMillis();
+    }
+
+    private long calendarDayStart(long time) {
+        Calendar c = Calendar.getInstance();
+        c.setTimeInMillis(time);
+        c.set(Calendar.HOUR_OF_DAY, 0);
+        c.set(Calendar.MINUTE, 0);
+        c.set(Calendar.SECOND, 0);
+        c.set(Calendar.MILLISECOND, 0);
+        return c.getTimeInMillis();
+    }
+
+    private long calendarDayOffset(long time, int days) {
+        Calendar c = Calendar.getInstance();
+        c.setTimeInMillis(calendarDayStart(time));
+        c.add(Calendar.DAY_OF_MONTH, days);
+        return c.getTimeInMillis();
+    }
+
+    private long calendarDayOfMonth(long monthStart, int day) {
+        Calendar c = Calendar.getInstance();
+        c.setTimeInMillis(calendarMonthStart(monthStart));
+        c.set(Calendar.DAY_OF_MONTH, day);
+        return c.getTimeInMillis();
+    }
+
+    private boolean sameCalendarDay(long a, long b) {
+        Calendar ca = Calendar.getInstance();
+        ca.setTimeInMillis(a);
+        Calendar cb = Calendar.getInstance();
+        cb.setTimeInMillis(b);
+        return ca.get(Calendar.YEAR) == cb.get(Calendar.YEAR) && ca.get(Calendar.DAY_OF_YEAR) == cb.get(Calendar.DAY_OF_YEAR);
+    }
+
+    private boolean isSameMonth(long a, long b) {
+        Calendar ca = Calendar.getInstance();
+        ca.setTimeInMillis(a);
+        Calendar cb = Calendar.getInstance();
+        cb.setTimeInMillis(b);
+        return ca.get(Calendar.YEAR) == cb.get(Calendar.YEAR) && ca.get(Calendar.MONTH) == cb.get(Calendar.MONTH);
+    }
+
+    private String formatCalendarMonth(long time) {
+        return new SimpleDateFormat("yyyy年M月", Locale.TAIWAN).format(new Date(time));
+    }
+
+    private String formatCalendarDate(long time) {
+        return new SimpleDateFormat("yyyy/MM/dd EEEE", Locale.TAIWAN).format(new Date(time));
+    }
+
+    private String moneyShort(int amount) {
+        if (amount >= 100000) return "$" + Math.round(amount / 1000f) + "k";
+        if (amount >= 10000) return "$" + (amount / 1000) + "." + ((amount % 1000) / 100) + "k";
+        return "$" + String.format(Locale.TAIWAN, "%,d", amount);
     }
 
     private TextView legendRow(String name, int amount, int color) {
@@ -1271,6 +1581,15 @@ public class MainActivity extends Activity {
             if (t.timeMillis >= start && t.timeMillis < end) out.add(t);
         }
         return out;
+    }
+
+    private int totalFor(List<Transaction> txs, String direction) {
+        int sum = 0;
+        if (txs == null) return 0;
+        for (Transaction t : txs) {
+            if (t != null && direction.equals(t.direction)) sum += Math.max(0, t.amount);
+        }
+        return sum;
     }
 
     private int reportElapsedDays(long start, long end) {
@@ -2753,7 +3072,7 @@ public class MainActivity extends Activity {
         advanced.addView(featureRow("月底預估花費", "依照目前花費速度推估月底可能花多少"));
         box.addView(advanced);
 
-        TextView version = text("AutoLedger V34", 12, MUTED, false);
+        TextView version = text("AutoLedger V35", 12, MUTED, false);
         version.setGravity(Gravity.CENTER);
         version.setPadding(0, dp(16), 0, dp(10));
         box.addView(version);
@@ -3011,13 +3330,10 @@ public class MainActivity extends Activity {
 
     private void showOnboarding() {
         showRoundedInfoDialog(
-                "歡迎使用自動記帳 V34",
+                "歡迎使用自動記帳 V35",
                 "這版新增 / 優化：\n\n" +
-                        "1. 甜甜圈圖文字改到中間與圖例，不再壓在圓圈上。\n" +
-                        "2. 財務報表新增花費節奏、分類排行與重點提醒。\n" +
-                        "3. 側邊選單加入更多記帳常用工具，移除重複報表入口。\n" +
-                        "4. 可自訂側邊選單名稱與圓形頭像。\n" +
-                        "5. 新增功能搜尋，輸入關鍵字就能快速跳到工具。",
+                        "1. 修正 LINE Pay 點數判斷：付款金額會當實付，點數只用來回推原價。\n" +
+                        "2. 首頁右上新增月曆帳本，可看每月摘要、每日收支，點日期可直接修改當天紀錄。",
                 "我知道了",
                 v -> AppSettings.setBool(this, AppSettings.KEY_ONBOARDED, true),
                 "通知用途",

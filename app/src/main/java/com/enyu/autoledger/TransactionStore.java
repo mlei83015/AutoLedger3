@@ -110,6 +110,7 @@ public class TransactionStore {
             boolean sameRaw = compact(old.raw).equals(compact(tx.raw));
             boolean discountEvidence = hasDiscountEvidence(old) || hasDiscountEvidence(tx);
             boolean knownPair = isLineBankWalletPair(oldType, newType) || isInvoiceWithWalletBank(oldType, newType);
+            boolean linePayPointPayment = isLinePayPointPayment(old) || isLinePayPointPayment(tx);
 
             // V33 修正版：不同金額只在「真的像同一筆折抵」時才合併。
             // 不能再只因為 LINE Pay / 銀行 / Google 錢包通知時間很近就把 90 元與 20 元混成同一筆。
@@ -127,6 +128,12 @@ public class TransactionStore {
                     log(context, "V31 明確點數/優惠通知合併｜原價 " + money(merged.originalAmount) + "｜實付 " + money(merged.amount) + "｜折抵 " + money(merged.discountAmount));
                     return true;
                 }
+                continue;
+            }
+
+            // V35：LINE Pay 點數通知裡的「付款金額」是實付，不要再用載具/銀行的另一個小金額推回去。
+            // 例：LINE Pay 付款 27、使用 3 點，載具或其他通知出現 24 時，不能合併成實付 24。
+            if (linePayPointPayment) {
                 continue;
             }
 
@@ -320,6 +327,14 @@ public class TransactionStore {
                 || s.contains("point")
                 || s.contains("coupon")
                 || s.contains("discount");
+    }
+
+    private static boolean isLinePayPointPayment(Transaction t) {
+        if (t == null) return false;
+        String s = compact(t.source + " " + t.merchant + " " + t.category + " " + t.raw).toLowerCase(Locale.ROOT);
+        boolean isLinePay = s.contains("linepay") || (s.contains("line") && s.contains("pay")) || s.contains("line錢包");
+        boolean hasPointHint = s.contains("點數") || s.contains("折抵") || s.contains("優惠") || s.contains("point") || s.contains("points") || s.contains("discount");
+        return isLinePay && hasPointHint;
     }
 
     private static boolean isTransferRecord(Transaction t) {

@@ -28,7 +28,7 @@ public class AppSettings {
     public static final String KEY_THEME = "theme";
     public static final String KEY_PALETTE = "palette";
     public static final String KEY_MONTHLY_BUDGET = "monthly_budget";
-    public static final String KEY_ONBOARDED = "onboarded_v34";
+    public static final String KEY_ONBOARDED = "onboarded_v35";
     public static final String KEY_NOTIFY_DAILY = "notify_daily_report";
     public static final String KEY_NOTIFY_AUTO_SAVED = "notify_auto_saved";
     public static final String KEY_NOTIFY_BUDGET = "notify_budget";
