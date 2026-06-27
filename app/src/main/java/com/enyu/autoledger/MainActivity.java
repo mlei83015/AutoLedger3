@@ -81,6 +81,7 @@ public class MainActivity extends Activity {
     private long homeMonthMillis = System.currentTimeMillis();
     private long calendarMonthMillis = System.currentTimeMillis();
     private long calendarFocusedDayMillis = -1L;
+    private int nextPageSlideX = 0;
 
     private int BG = 0xFFF6F7FB;
     private int CARD = 0xFFFFFFFF;
@@ -188,6 +189,7 @@ public class MainActivity extends Activity {
         content.removeAllViews();
         content.addView(v, new LinearLayout.LayoutParams(-1, -1));
         rebuildNav();
+        animatePageIn(v);
     }
 
     private void setPageFull(View v) {
@@ -195,6 +197,23 @@ public class MainActivity extends Activity {
         content.addView(v, new LinearLayout.LayoutParams(-1, -1));
         nav.removeAllViews();
         nav.setVisibility(View.GONE);
+        animatePageIn(v);
+    }
+
+    private void animatePageIn(View v) {
+        if (v == null) return;
+        int slide = nextPageSlideX;
+        nextPageSlideX = 0;
+        v.setAlpha(0f);
+        v.setTranslationX(slide == 0 ? 0f : slide);
+        v.setTranslationY(slide == 0 ? dp(10) : 0f);
+        v.animate()
+                .alpha(1f)
+                .translationX(0f)
+                .translationY(0f)
+                .setDuration(slide == 0 ? 180 : 240)
+                .setInterpolator(new android.view.animation.DecelerateInterpolator())
+                .start();
     }
 
     private ScrollView pageBase() {
@@ -615,22 +634,38 @@ public class MainActivity extends Activity {
     private void attachCalendarMonthSwipe(View target) {
         final float[] startX = new float[]{0f};
         final float[] startY = new float[]{0f};
+        final boolean[] triggered = new boolean[]{false};
         target.setOnTouchListener((v, event) -> {
             if (event.getAction() == MotionEvent.ACTION_DOWN) {
                 startX[0] = event.getX();
                 startY[0] = event.getY();
+                triggered[0] = false;
                 return false;
+            }
+            if (event.getAction() == MotionEvent.ACTION_MOVE && !triggered[0]) {
+                float dx = event.getX() - startX[0];
+                float dy = event.getY() - startY[0];
+                if (Math.abs(dx) > dp(46) && Math.abs(dx) > Math.abs(dy) * 1.15f) {
+                    triggered[0] = true;
+                    navigateCalendarMonth(dx < 0 ? 1 : -1);
+                    return true;
+                }
             }
             if (event.getAction() == MotionEvent.ACTION_UP) {
                 float dx = event.getX() - startX[0];
                 float dy = event.getY() - startY[0];
-                if (Math.abs(dx) > dp(72) && Math.abs(dx) > Math.abs(dy) * 1.4f) {
-                    showCalendarMonth(calendarMonthOffset(calendarMonthMillis, dx < 0 ? 1 : -1));
+                if (!triggered[0] && Math.abs(dx) > dp(54) && Math.abs(dx) > Math.abs(dy) * 1.2f) {
+                    navigateCalendarMonth(dx < 0 ? 1 : -1);
                     return true;
                 }
             }
             return false;
         });
+    }
+
+    private void navigateCalendarMonth(int offset) {
+        nextPageSlideX = offset > 0 ? dp(44) : -dp(44);
+        showCalendarMonth(calendarMonthOffset(calendarMonthMillis, offset));
     }
 
     private LinearLayout calendarMetric(String label, String value, int color) {
@@ -1187,9 +1222,10 @@ public class MainActivity extends Activity {
         manualDirection = direction == null ? "expense" : direction;
         final boolean startIncome = "income".equals(manualDirection);
 
-        ScrollView scroll = pageBase();
-        LinearLayout box = pageBox(scroll);
-        box.setPadding(dp(16), dp(8), dp(16), dp(12));
+        LinearLayout page = new LinearLayout(this);
+        page.setOrientation(LinearLayout.VERTICAL);
+        page.setPadding(dp(16), dp(8), dp(16), dp(10));
+        page.setBackgroundColor(BG);
 
         LinearLayout top = new LinearLayout(this);
         top.setGravity(Gravity.CENTER_VERTICAL);
@@ -1214,7 +1250,7 @@ public class MainActivity extends Activity {
         more.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
         more.setOnClickListener(v -> showToolSearchDialog());
         top.addView(more, new LinearLayout.LayoutParams(dp(38), dp(38)));
-        box.addView(top, marginLp(-1, -2, 0, 0, 0, dp(8)));
+        page.addView(top, marginLp(-1, -2, 0, 0, 0, dp(8)));
 
         final long[] selectedTime = new long[]{System.currentTimeMillis()};
         LinearLayout dateRow = new LinearLayout(this);
@@ -1232,22 +1268,37 @@ public class MainActivity extends Activity {
         dateArrow.setGravity(Gravity.CENTER);
         dateRow.addView(dateArrow, new LinearLayout.LayoutParams(dp(22), -1));
         dateRow.setOnClickListener(v -> showDateTimePicker(selectedTime, dateValue));
-        box.addView(dateRow, marginLp(-1, dp(42), 0, 0, 0, dp(12)));
+        page.addView(dateRow, marginLp(-1, dp(42), 0, 0, 0, dp(10)));
 
         final String[] selectedCategory = new String[]{defaultManualCategory(startIncome)};
         TextView categoryIcon = text(iconFor(selectedCategory[0]), 26, startIncome ? SOFT_BLUE : ORANGE, false);
         categoryIcon.setGravity(Gravity.CENTER);
         TextView categoryBadge = text(selectedCategory[0], 12, startIncome ? SOFT_BLUE : ORANGE, true);
         categoryBadge.setGravity(Gravity.CENTER);
-        addManualCategoryGrid(box, startIncome, selectedCategory, categoryIcon, categoryBadge);
+
+        ScrollView categoryScroll = new ScrollView(this);
+        categoryScroll.setFillViewport(false);
+        categoryScroll.setVerticalScrollBarEnabled(false);
+        if (Build.VERSION.SDK_INT >= 9) categoryScroll.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
+        LinearLayout categoryBox = new LinearLayout(this);
+        categoryBox.setOrientation(LinearLayout.VERTICAL);
+        categoryBox.setPadding(0, dp(4), 0, dp(14));
+        addManualCategoryGrid(categoryBox, startIncome, selectedCategory, categoryIcon, categoryBadge);
+        categoryScroll.addView(categoryBox, new ScrollView.LayoutParams(-1, -2));
+        page.addView(categoryScroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
         final String[] expr = new String[]{""};
         final int[] amountValue = new int[]{0};
+        LinearLayout dock = new LinearLayout(this);
+        dock.setOrientation(LinearLayout.VERTICAL);
+        dock.setPadding(0, dp(10), 0, 0);
+        dock.setBackgroundColor(BG);
+
         LinearLayout amountPanel = new LinearLayout(this);
         amountPanel.setOrientation(LinearLayout.HORIZONTAL);
         amountPanel.setGravity(Gravity.CENTER_VERTICAL);
-        amountPanel.setPadding(dp(14), dp(10), dp(14), dp(10));
-        amountPanel.setBackground(round(isDarkMode() ? 0xFF1A232E : 0xFFFFFFFF, dp(3), BORDER));
+        amountPanel.setPadding(dp(14), dp(12), dp(14), dp(12));
+        amountPanel.setBackground(round(isDarkMode() ? 0xFF1A232E : 0xFFFFFFFF, dp(12), BORDER));
 
         LinearLayout leftInfo = new LinearLayout(this);
         leftInfo.setOrientation(LinearLayout.VERTICAL);
@@ -1273,11 +1324,11 @@ public class MainActivity extends Activity {
         noteInput.setSingleLine(true);
         noteInput.setTextSize(15);
         amountPanel.addView(noteInput, new LinearLayout.LayoutParams(0, dp(52), 1));
-        box.addView(amountPanel, marginLp(-1, -2, 0, dp(4), 0, dp(10)));
+        dock.addView(amountPanel, marginLp(-1, -2, 0, 0, 0, dp(6)));
 
         TextView expressionText = text("輸入金額，或用 ÷ 分攤", 12, MUTED, false);
         expressionText.setGravity(Gravity.RIGHT);
-        box.addView(expressionText, marginLp(-1, -2, 0, 0, 0, dp(8)));
+        dock.addView(expressionText, marginLp(-1, -2, 0, 0, 0, dp(6)));
 
         final Switch addIncomeToBudget = new Switch(this);
         if (startIncome) {
@@ -1289,7 +1340,7 @@ public class MainActivity extends Activity {
             TextView bonusText = text("加回目前剩餘餘額", 13, TEXT, true);
             bonusRow.addView(bonusText, new LinearLayout.LayoutParams(0, -2, 1));
             bonusRow.addView(addIncomeToBudget);
-            box.addView(bonusRow, marginLp(-1, dp(42), 0, 0, 0, dp(8)));
+            dock.addView(bonusRow, marginLp(-1, dp(42), 0, 0, 0, dp(6)));
         }
 
         View.OnClickListener saveRecord = v -> {
@@ -1315,14 +1366,18 @@ public class MainActivity extends Activity {
             homeMonthMillis = selectedTime[0];
             showHome();
         };
-        addManualCalculatorPad(box, expr, amountValue, amountText, expressionText, saveRecord);
+        addManualCalculatorPad(dock, expr, amountValue, amountText, expressionText, saveRecord);
+        page.addView(dock, new LinearLayout.LayoutParams(-1, -2));
 
-        setPage(scroll);
+        setPageFull(page);
     }
 
     private String defaultManualCategory(boolean income) {
         List<String> items = manualCategoryList(income);
-        return items.isEmpty() ? (income ? "收入" : "早餐") : items.get(0);
+        for (String item : items) {
+            if (!"新增".equals(item)) return item;
+        }
+        return income ? "收入" : "早餐";
     }
 
     private List<String> manualCategoryList(boolean income) {
@@ -1330,6 +1385,7 @@ public class MainActivity extends Activity {
                 ? new String[]{"薪水", "零用錢", "獎金", "回饋", "退款", "家人", "投資", "現金", "其他"}
                 : new String[]{"早餐", "午餐", "晚餐", "飲品", "點心", "交通", "購物", "娛樂", "日用品", "房租", "醫療", "數位", "社交", "禮物", "未分類"};
         ArrayList<String> out = new ArrayList<>();
+        out.add("新增");
         for (String item : defaults) if (!out.contains(item)) out.add(item);
         List<String> saved = income ? AppSettings.getIncomeCategories(this) : AppSettings.getExpenseCategories(this);
         for (String item : saved) {
@@ -1357,23 +1413,28 @@ public class MainActivity extends Activity {
             for (int j = 0; j < 4; j++) {
                 int index = i + j;
                 if (index >= items.size()) {
-                    row.addView(new View(this), marginLp(0, dp(70), dp(3), dp(3), dp(3), dp(3), 1));
+                    row.addView(new View(this), marginLp(0, dp(76), dp(5), dp(5), dp(5), dp(5), 1));
                     continue;
                 }
                 String name = items.get(index);
                 Button b = manualCategoryButton(name, income, name.equals(selectedCategory[0]));
                 buttons.add(b);
                 b.setOnClickListener(v -> {
+                    if ("新增".equals(name)) {
+                        showAddManualCategoryDialog(income);
+                        return;
+                    }
                     selectedCategory[0] = name;
                     categoryIcon.setText(iconFor(name));
                     categoryBadge.setText(name);
+                    categoryIcon.animate().scaleX(1.12f).scaleY(1.12f).setDuration(90).withEndAction(() -> categoryIcon.animate().scaleX(1f).scaleY(1f).setDuration(100).start()).start();
                     for (Button other : buttons) {
                         String tag = String.valueOf(other.getTag());
                         boolean picked = tag.equals(name);
                         styleManualCategoryButton(other, tag, income, picked);
                     }
                 });
-                row.addView(b, marginLp(0, dp(70), dp(3), dp(3), dp(3), dp(3), 1));
+                row.addView(b, marginLp(0, dp(76), dp(5), dp(5), dp(5), dp(5), 1));
             }
             grid.addView(row);
         }
@@ -1393,6 +1454,13 @@ public class MainActivity extends Activity {
     }
 
     private void styleManualCategoryButton(Button b, String name, boolean income, boolean picked) {
+        if ("新增".equals(name)) {
+            b.setText("＋\n新增");
+            b.setTextColor(income ? SOFT_BLUE : ORANGE);
+            b.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+            b.setBackground(round(isDarkMode() ? 0xFF182431 : 0xFFFFF7EF, dp(20), income ? SOFT_BLUE : ORANGE));
+            return;
+        }
         int active = income ? SOFT_BLUE : ORANGE;
         int bg = picked ? (income ? 0x3327B9E8 : 0x33FFB24A) : Color.TRANSPARENT;
         int stroke = picked ? active : Color.TRANSPARENT;
@@ -1400,6 +1468,41 @@ public class MainActivity extends Activity {
         b.setTextColor(picked ? active : TEXT);
         b.setTypeface(Typeface.DEFAULT, picked ? Typeface.BOLD : Typeface.NORMAL);
         b.setBackground(round(bg, dp(18), stroke));
+    }
+
+    private void showAddManualCategoryDialog(boolean income) {
+        final AlertDialog dialog = new AlertDialog.Builder(this).create();
+        LinearLayout panel = dialogPanel(dp(28));
+        panel.addView(text(income ? "新增收入分類" : "新增支出分類", 21, TEXT, true), marginLp(-1, -2, 0, 0, 0, dp(8)));
+        panel.addView(text("新增後會出現在手動新增與分類管理。", 13, MUTED, false), marginLp(-1, -2, 0, 0, 0, dp(12)));
+        final EditText input = edit(income ? "例如：獎學金、家人" : "例如：宵夜、影印", false);
+        panel.addView(input, marginLp(-1, dp(54), 0, 0, 0, dp(14)));
+        LinearLayout actions = new LinearLayout(this);
+        Button cancel = dialogBtn("取消");
+        Button save = dialogBtn("新增");
+        actions.addView(cancel, marginLp(0, dp(48), 0, 0, dp(6), 0, 1));
+        actions.addView(save, marginLp(0, dp(48), dp(6), 0, 0, 0, 1));
+        panel.addView(actions);
+        cancel.setOnClickListener(v -> dialog.dismiss());
+        save.setOnClickListener(v -> {
+            String name = input.getText().toString().trim();
+            if (name.isEmpty()) {
+                Toast.makeText(this, "請輸入分類名稱", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            List<String> src = income ? AppSettings.getIncomeCategories(this) : AppSettings.getExpenseCategories(this);
+            ArrayList<String> next = new ArrayList<>();
+            next.add(name);
+            for (String item : src) {
+                if (item == null) continue;
+                String clean = item.trim();
+                if (!clean.isEmpty() && !next.contains(clean)) next.add(clean);
+            }
+            AppSettings.setList(this, income ? AppSettings.KEY_INCOME_CATEGORIES : AppSettings.KEY_EXPENSE_CATEGORIES, next);
+            dialog.dismiss();
+            showManual(income ? "income" : "expense");
+        });
+        showCustomDialog(dialog, panel);
     }
 
     private void addManualCalculatorPad(LinearLayout box, String[] expr, int[] amountValue, TextView amountText, TextView expressionText, View.OnClickListener saveRecord) {
@@ -1419,7 +1522,7 @@ public class MainActivity extends Activity {
             for (String label : rowLabels) {
                 Button b = calcKey(label, "OK".equals(label));
                 b.setOnClickListener(v -> handleMoneyCalcInput(label, expr, amountValue, amountText, expressionText, saveRecord));
-                row.addView(b, marginLp(0, dp(56), dp(4), dp(4), dp(4), dp(4), "OK".equals(label) ? 2 : 1));
+                row.addView(b, marginLp(0, dp(56), dp(5), dp(5), dp(5), dp(5), "OK".equals(label) ? 2 : 1));
             }
             pad.addView(row);
         }
@@ -2256,6 +2359,7 @@ public class MainActivity extends Activity {
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(dp(20), dp(18), dp(20), dp(18));
         panel.setBackground(round(isDarkMode() ? 0xFF1E242D : 0xFFFFFFFF, dp(20), BORDER));
+        panel.setMinimumHeight(getResources().getDisplayMetrics().heightPixels);
 
         LinearLayout closeRow = new LinearLayout(this);
         closeRow.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
@@ -2310,22 +2414,57 @@ public class MainActivity extends Activity {
         panel.addView(encourage);
 
         ScrollView menuScroll = new ScrollView(this);
-        menuScroll.setFillViewport(false);
+        menuScroll.setFillViewport(true);
         menuScroll.setVerticalScrollBarEnabled(false);
         if (Build.VERSION.SDK_INT >= 9) menuScroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
         menuScroll.addView(panel, new ScrollView.LayoutParams(-1, -2));
+        int drawerWidth = (int) (getResources().getDisplayMetrics().widthPixels * 0.62f);
         AlertDialog dialog = new AlertDialog.Builder(this).setView(menuScroll).create();
+        dialog.setCanceledOnTouchOutside(true);
         dialog.setOnShowListener(d -> {
-            if (dialog.getWindow() != null) dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
+            Window w = dialog.getWindow();
+            if (w != null) {
+                w.setBackgroundDrawableResource(android.R.color.transparent);
+                w.getDecorView().setPadding(0, 0, 0, 0);
+                w.setGravity(Gravity.START | Gravity.TOP);
+                w.setDimAmount(0.48f);
+                w.setLayout(drawerWidth, ViewGroup.LayoutParams.MATCH_PARENT);
+            }
+            menuScroll.setTranslationX(-drawerWidth);
+            menuScroll.setAlpha(0.92f);
+            menuScroll.animate()
+                    .translationX(0f)
+                    .alpha(1f)
+                    .setDuration(240)
+                    .setInterpolator(new android.view.animation.DecelerateInterpolator())
+                    .start();
         });
         sideDialog = dialog;
+        sideDialogView = menuScroll;
         dialog.show();
     }
 
     private AlertDialog sideDialog;
+    private View sideDialogView;
 
     private void closeDialogs() {
-        if (sideDialog != null && sideDialog.isShowing()) sideDialog.dismiss();
+        if (sideDialog == null || !sideDialog.isShowing()) return;
+        View drawer = sideDialogView;
+        if (drawer == null) {
+            sideDialog.dismiss();
+            return;
+        }
+        drawer.animate()
+                .translationX(-Math.max(drawer.getWidth(), dp(260)))
+                .alpha(0.86f)
+                .setDuration(170)
+                .setInterpolator(new android.view.animation.AccelerateInterpolator())
+                .withEndAction(() -> {
+                    if (sideDialog != null && sideDialog.isShowing()) sideDialog.dismiss();
+                    sideDialog = null;
+                    sideDialogView = null;
+                })
+                .start();
     }
 
     private View sideMenuButton(String icon, String label, View.OnClickListener listener) {
@@ -3621,7 +3760,7 @@ public class MainActivity extends Activity {
         advanced.addView(featureRow("月底預估花費", "依照目前花費速度推估月底可能花多少"));
         box.addView(advanced);
 
-        TextView version = text("AutoLedger V37", 12, MUTED, false);
+        TextView version = text("AutoLedger V38", 12, MUTED, false);
         version.setGravity(Gravity.CENTER);
         version.setPadding(0, dp(16), 0, dp(10));
         box.addView(version);
@@ -3879,11 +4018,11 @@ public class MainActivity extends Activity {
 
     private void showOnboarding() {
         showRoundedInfoDialog(
-                "歡迎使用自動記帳 V37",
+                "歡迎使用自動記帳 V38",
                 "這版新增 / 優化：\n\n" +
-                        "1. 手動新增改成分類格子＋大按鍵計算機，出門記帳更快。\n" +
-                        "2. 記帳計算機移到三條線與 Android 快速開關，打開就是純計算機。\n" +
-                        "3. 月曆帳本改成左右滑動切月份，頂部工具列會固定保留。",
+                        "1. 手動新增改成上方分類可滑、底部輸入鍵盤固定。\n" +
+                        "2. 月曆滑動切月份更靈敏，並加入左右進場動畫。\n" +
+                        "3. 三條線選單改成左側抽屜，畫面不再整個被蓋住。",
                 "我知道了",
                 v -> AppSettings.setBool(this, AppSettings.KEY_ONBOARDED, true),
                 "通知用途",
