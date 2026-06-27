@@ -67,6 +67,7 @@ public class MainActivity extends Activity {
     public static final String ACTION_QUICK_EXPENSE = "com.enyu.autoledger.action.QUICK_EXPENSE";
     public static final String ACTION_QUICK_INCOME = "com.enyu.autoledger.action.QUICK_INCOME";
     public static final String ACTION_QUICK_CALCULATOR = "com.enyu.autoledger.action.QUICK_CALCULATOR";
+    public static final String ACTION_PENDING_LINEPAY_CARD = "com.enyu.autoledger.action.PENDING_LINEPAY_CARD";
     public static final String ACTION_EDIT_WIDGET_PHOTO = "com.enyu.autoledger.action.EDIT_WIDGET_PHOTO";
     private static final int REQUEST_WIDGET_IMAGE = 1901;
     private static final int REQUEST_PROFILE_AVATAR = 1902;
@@ -82,6 +83,8 @@ public class MainActivity extends Activity {
     private long calendarMonthMillis = System.currentTimeMillis();
     private long calendarFocusedDayMillis = -1L;
     private int nextPageSlideX = 0;
+    private String manualPrefillCategory = "";
+    private String manualPrefillNote = "";
 
     private int BG = 0xFFF6F7FB;
     private int CARD = 0xFFFFFFFF;
@@ -139,6 +142,10 @@ public class MainActivity extends Activity {
             root.postDelayed(() -> showManual("income"), 120);
         } else if (ACTION_QUICK_CALCULATOR.equals(action)) {
             root.postDelayed(() -> showCalculatorTool(), 120);
+        } else if (ACTION_PENDING_LINEPAY_CARD.equals(action)) {
+            manualPrefillCategory = "網購";
+            manualPrefillNote = "LINE Pay簽帳卡待補金額";
+            root.postDelayed(() -> showManual("expense"), 120);
         } else if (ACTION_EDIT_WIDGET_PHOTO.equals(action)) {
             root.postDelayed(() -> showWidgetImageSettingsDialog(), 160);
         }
@@ -930,8 +937,10 @@ public class MainActivity extends Activity {
                         c.set(Calendar.MINUTE, 0);
                         c.set(Calendar.SECOND, 0);
                         c.set(Calendar.MILLISECOND, 0);
-                        dialog.dismiss();
-                        if (callback != null) callback.onPick(c.getTimeInMillis());
+                        long pickedMonth = c.getTimeInMillis();
+                        dismissMonthPickerSheet(dialog, panel, () -> {
+                            if (callback != null) callback.onPick(pickedMonth);
+                        });
                     });
                     row.addView(b, marginLp(0, dp(44), dp(4), dp(4), dp(4), dp(4), 1));
                 }
@@ -941,7 +950,44 @@ public class MainActivity extends Activity {
         prevYear.setOnClickListener(v -> { shownYear[0]--; render[0].run(); });
         nextYear.setOnClickListener(v -> { shownYear[0]++; render[0].run(); });
         render[0].run();
-        showCustomDialog(dialog, panel);
+        showMonthPickerSheet(dialog, panel);
+    }
+
+    private void showMonthPickerSheet(AlertDialog dialog, View panel) {
+        dialog.setView(panel, 0, 0, 0, 0);
+        dialog.setCanceledOnTouchOutside(true);
+        dialog.setOnShowListener(d -> {
+            Window w = dialog.getWindow();
+            if (w != null) {
+                w.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+                w.getDecorView().setPadding(0, 0, 0, 0);
+                w.setGravity(Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+                w.setDimAmount(0.42f);
+                w.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            }
+            panel.setTranslationY(-dp(280));
+            panel.setAlpha(0.92f);
+            panel.animate()
+                    .translationY(0f)
+                    .alpha(1f)
+                    .setDuration(230)
+                    .setInterpolator(new android.view.animation.DecelerateInterpolator())
+                    .start();
+        });
+        dialog.show();
+    }
+
+    private void dismissMonthPickerSheet(AlertDialog dialog, View panel, Runnable after) {
+        panel.animate()
+                .translationY(-Math.max(panel.getHeight(), dp(260)))
+                .alpha(0.9f)
+                .setDuration(170)
+                .setInterpolator(new android.view.animation.AccelerateInterpolator())
+                .withEndAction(() -> {
+                    if (dialog != null && dialog.isShowing()) dialog.dismiss();
+                    if (after != null) after.run();
+                })
+                .start();
     }
 
     private interface MonthPickCallback {
@@ -1204,6 +1250,7 @@ public class MainActivity extends Activity {
         if (c.contains("餐") || c.contains("早餐") || c.contains("午餐") || c.contains("晚餐")) return "🍴";
         if (c.contains("交通") || c.contains("捷運") || c.contains("停車") || c.contains("加油")) return "🚌";
         if (c.contains("超商")) return "🏪";
+        if (c.contains("網購") || c.contains("蝦皮") || c.contains("包裹")) return "📦";
         if (c.contains("購") || c.contains("用品")) return "🛍";
         if (c.contains("訂閱")) return "▶";
         if (c.contains("遊戲") || c.contains("娛樂")) return "🎮";
@@ -1270,7 +1317,12 @@ public class MainActivity extends Activity {
         dateRow.setOnClickListener(v -> showDateTimePicker(selectedTime, dateValue));
         page.addView(dateRow, marginLp(-1, dp(42), 0, 0, 0, dp(10)));
 
-        final String[] selectedCategory = new String[]{defaultManualCategory(startIncome)};
+        String pendingCategory = startIncome ? "" : manualPrefillCategory;
+        String pendingNote = startIncome ? "" : manualPrefillNote;
+        manualPrefillCategory = "";
+        manualPrefillNote = "";
+
+        final String[] selectedCategory = new String[]{pendingCategory == null || pendingCategory.trim().isEmpty() ? defaultManualCategory(startIncome) : pendingCategory.trim()};
         TextView categoryIcon = text(iconFor(selectedCategory[0]), 26, startIncome ? SOFT_BLUE : ORANGE, false);
         categoryIcon.setGravity(Gravity.CENTER);
         TextView categoryBadge = text(selectedCategory[0], 12, startIncome ? SOFT_BLUE : ORANGE, true);
@@ -1323,6 +1375,7 @@ public class MainActivity extends Activity {
         final EditText noteInput = edit("輸入備註", false);
         noteInput.setSingleLine(true);
         noteInput.setTextSize(15);
+        if (pendingNote != null && !pendingNote.trim().isEmpty()) noteInput.setText(pendingNote.trim());
         amountPanel.addView(noteInput, new LinearLayout.LayoutParams(0, dp(52), 1));
         dock.addView(amountPanel, marginLp(-1, -2, 0, 0, 0, dp(6)));
 
@@ -1383,7 +1436,7 @@ public class MainActivity extends Activity {
     private List<String> manualCategoryList(boolean income) {
         String[] defaults = income
                 ? new String[]{"薪水", "零用錢", "獎金", "回饋", "退款", "家人", "投資", "現金", "其他"}
-                : new String[]{"早餐", "午餐", "晚餐", "飲品", "點心", "交通", "購物", "娛樂", "日用品", "房租", "醫療", "數位", "社交", "禮物", "未分類"};
+                : new String[]{"早餐", "午餐", "晚餐", "飲品", "點心", "交通", "網購", "購物", "娛樂", "日用品", "房租", "醫療", "數位", "社交", "禮物", "未分類"};
         ArrayList<String> out = new ArrayList<>();
         out.add("新增");
         for (String item : defaults) if (!out.contains(item)) out.add(item);
@@ -3760,7 +3813,7 @@ public class MainActivity extends Activity {
         advanced.addView(featureRow("月底預估花費", "依照目前花費速度推估月底可能花多少"));
         box.addView(advanced);
 
-        TextView version = text("AutoLedger V38", 12, MUTED, false);
+        TextView version = text("AutoLedger V39", 12, MUTED, false);
         version.setGravity(Gravity.CENTER);
         version.setPadding(0, dp(16), 0, dp(10));
         box.addView(version);
@@ -4018,11 +4071,11 @@ public class MainActivity extends Activity {
 
     private void showOnboarding() {
         showRoundedInfoDialog(
-                "歡迎使用自動記帳 V38",
+                "歡迎使用自動記帳 V39",
                 "這版新增 / 優化：\n\n" +
-                        "1. 手動新增改成上方分類可滑、底部輸入鍵盤固定。\n" +
-                        "2. 月曆滑動切月份更靈敏，並加入左右進場動畫。\n" +
-                        "3. 三條線選單改成左側抽屜，畫面不再整個被蓋住。",
+                        "1. 中國信託 LINE Pay 簽帳卡通知沒有金額時，會提醒你補金額。\n" +
+                        "2. 年月選擇改成從上方滑下來的選單，不再浮在畫面中央。\n" +
+                        "3. 手動新增會預填網購與 LINE Pay 待補備註，補帳更快。",
                 "我知道了",
                 v -> AppSettings.setBool(this, AppSettings.KEY_ONBOARDED, true),
                 "通知用途",

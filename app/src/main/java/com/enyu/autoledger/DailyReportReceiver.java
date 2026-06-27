@@ -11,6 +11,7 @@ import android.os.Build;
 public class DailyReportReceiver extends BroadcastReceiver {
     public static final String CHANNEL_REPORT = "daily_report";
     public static final String CHANNEL_SAVED = "saved_transaction";
+    public static final String CHANNEL_PENDING = "pending_amount";
 
     @Override
     public void onReceive(Context context, Intent intent) {
@@ -44,20 +45,42 @@ public class DailyReportReceiver extends BroadcastReceiver {
         showNotification(context, (int) (System.currentTimeMillis() % 100000), CHANNEL_SAVED, title, body, false);
     }
 
+    public static void showPendingLinePayCardNotification(Context context) {
+        createChannels(context);
+        Intent open = new Intent(context, MainActivity.class);
+        open.setAction(MainActivity.ACTION_PENDING_LINEPAY_CARD);
+        open.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        showNotification(
+                context,
+                2039,
+                CHANNEL_PENDING,
+                "LINE Pay 簽帳卡待補金額",
+                "中國信託通知沒有金額。點一下補上蝦皮 / 網購金額，避免漏記。",
+                true,
+                open
+        );
+    }
+
     public static void createChannels(Context context) {
         if (Build.VERSION.SDK_INT < 26) return;
         NotificationManager nm = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm == null) return;
         NotificationChannel report = new NotificationChannel(CHANNEL_REPORT, "每日記帳報告", NotificationManager.IMPORTANCE_DEFAULT);
         NotificationChannel saved = new NotificationChannel(CHANNEL_SAVED, "自動記帳完成", NotificationManager.IMPORTANCE_LOW);
+        NotificationChannel pending = new NotificationChannel(CHANNEL_PENDING, "待補金額提醒", NotificationManager.IMPORTANCE_DEFAULT);
         nm.createNotificationChannel(report);
         nm.createNotificationChannel(saved);
+        nm.createNotificationChannel(pending);
     }
 
     private static void showNotification(Context context, int id, String channel, String title, String body, boolean autoCancel) {
+        Intent open = new Intent(context, MainActivity.class);
+        showNotification(context, id, channel, title, body, autoCancel, open);
+    }
+
+    private static void showNotification(Context context, int id, String channel, String title, String body, boolean autoCancel, Intent open) {
         NotificationManager nm = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm == null) return;
-        Intent open = new Intent(context, MainActivity.class);
         PendingIntent pi = PendingIntent.getActivity(
                 context,
                 id,

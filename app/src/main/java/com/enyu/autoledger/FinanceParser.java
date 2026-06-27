@@ -47,6 +47,15 @@ public class FinanceParser {
         return new Transaction(timeMillis, amount, info.originalAmount, info.discountAmount, direction, source, merchant, category, enrichedRaw, hash, "");
     }
 
+    public static boolean isAmountlessLinePayDebitCardNotice(String packageName, String appName, String title, String text) {
+        String raw = join(appName, title, text).replace('，', ',');
+        if (extractAmount(raw) > 0) return false;
+        String lower = (raw + " " + packageName + " " + appName).toLowerCase(Locale.ROOT);
+        boolean ctbcLine = raw.contains("中國信託") || raw.contains("中信") || lower.contains("ctbc");
+        boolean linePayDebit = containsAnyIgnoreCase(raw, "line pay簽帳", "line pay 簽帳", "linepay簽帳", "簽帳金融卡消費通知");
+        return ctbcLine && linePayDebit;
+    }
+
     private static String join(String appName, String title, String text) {
         StringBuilder b = new StringBuilder();
         if (appName != null) b.append(appName).append(' ');

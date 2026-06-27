@@ -42,6 +42,8 @@ public class FinanceNotificationListener extends NotificationListenerService {
             if (added) {
                 DailyReportReceiver.showInstantSavedNotification(getApplicationContext(), tx);
             }
+        } else if (FinanceParser.isAmountlessLinePayDebitCardNotice(packageName, appName, title, combinedText)) {
+            DailyReportReceiver.showPendingLinePayCardNotification(getApplicationContext());
         }
     }
 
