@@ -231,10 +231,12 @@ public class FinanceParser {
                 "付款成功", "付款完成", "付款", "支付", "消費", "刷卡",
                 "Outward transfer account", "outward transfer account", "Outward transfer", "outward transfer", "you have executed");
         boolean clearIncoming = containsAny(s,
-                "入帳", "轉入成功", "匯入", "收到匯款", "薪資", "薪水", "存入", "收入",
+                "入帳", "轉入成功", "匯入", "收到匯款", "薪資", "薪水", "存款", "存入", "收入",
                 "Inward transfer received", "incoming transfer", "credited");
+        boolean clearDeposit = looksDepositIncome(s);
 
         // LINE Pay / Google 錢包一般都是付款通知；除非明確是退款入帳，不然先當支出。
+        if (clearDeposit) return "income";
         if ((isLinePay || isGoogleWallet) && !refundLike) return "expense";
         if (refundLike) return "income";
         if (outgoingTransferText || (isCtbc && clearOutgoingTransfer)) return "expense";
@@ -254,6 +256,13 @@ public class FinanceParser {
         if (givePattern.matcher(s).find()) return true;
         Pattern amountThenTarget = Pattern.compile("(?:給|轉給|匯給)[^\\n。；;，,]{0,24}(?:NT\\$|NTD|TWD|\\$)?\\s*[0-9,]+\\s*(?:元)?");
         return amountThenTarget.matcher(s).find();
+    }
+
+    private static boolean looksDepositIncome(String s) {
+        if (s == null) return false;
+        if (containsAny(s, "ATM存款", "存款通知", "存款交易", "存入帳號", "存入帳戶", "現金存入")) return true;
+        Pattern p = Pattern.compile("(?:ATM|銀行|帳號|帳戶)[^\\n。；;，,]{0,28}(?:存款|存入)");
+        return p.matcher(s).find();
     }
 
     private static String detectSource(String packageName, String appName, String s) {
@@ -285,7 +294,13 @@ public class FinanceParser {
     }
 
     private static String detectCategory(String s, String merchant, String direction) {
-        if ("income".equals(direction)) return "收入";
+        if ("income".equals(direction)) {
+            String incomeText = s + " " + merchant;
+            if (containsAny(incomeText, "ATM存款", "存款", "存入", "現金存入")) return "存款";
+            if (containsAny(incomeText, "薪資", "薪水", "薪轉")) return "薪水";
+            if (containsAny(incomeText, "退款", "退刷", "退貨")) return "退款";
+            return "收入";
+        }
         String all = (s + " " + merchant).toUpperCase(Locale.ROOT);
         if (containsAny(all, "7-ELEVEN", "711", "全家", "萊爾富", "OK超商", "統一超商", "便利商店", "超商")) return "超商";
         if (containsAny(all, "飲料", "咖啡", "早餐", "午餐", "晚餐", "餐", "麥當勞", "KFC", "星巴克", "迷客夏", "清心", "可不可")) return "餐飲";

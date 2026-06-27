@@ -28,7 +28,7 @@ public class AppSettings {
     public static final String KEY_THEME = "theme";
     public static final String KEY_PALETTE = "palette";
     public static final String KEY_MONTHLY_BUDGET = "monthly_budget";
-    public static final String KEY_ONBOARDED = "onboarded_v35";
+    public static final String KEY_ONBOARDED = "onboarded_v36";
     public static final String KEY_NOTIFY_DAILY = "notify_daily_report";
     public static final String KEY_NOTIFY_AUTO_SAVED = "notify_auto_saved";
     public static final String KEY_NOTIFY_BUDGET = "notify_budget";
@@ -323,7 +323,7 @@ public class AppSettings {
         boolean isLinePay = all.contains("line pay") || all.contains("linepay") || all.contains("line錢包") || all.contains("line pay付款") || all.contains("line pay 付款");
         boolean isInvoice = all.contains("載具") || all.contains("發票") || all.contains("invoice") || all.contains("einvoice") || all.contains("財政部");
         boolean isGoogleWallet = all.contains("google wallet") || all.contains("google pay") || all.contains("gpay") || all.contains("google錢包") || all.contains("google 錢包") || all.contains("walletnfcrel");
-        boolean isBank = all.contains("銀行") || all.contains("中國信託") || all.contains("中信") || all.contains("ctbc") || all.contains("帳戶") || all.contains("轉帳") || all.contains("匯款") || all.contains("扣款") || all.contains("信用卡") || all.contains("金融卡") || all.contains("刷卡") || all.contains("atm") || all.contains("bank");
+        boolean isBank = all.contains("銀行") || all.contains("中國信託") || all.contains("中信") || all.contains("ctbc") || all.contains("帳戶") || all.contains("轉帳") || all.contains("匯款") || all.contains("扣款") || all.contains("存款") || all.contains("存入") || all.contains("信用卡") || all.contains("金融卡") || all.contains("刷卡") || all.contains("atm") || all.contains("bank");
         boolean isSms = all.contains("sms") || all.contains("mms") || all.contains("簡訊") || all.contains("訊息");
 
         if (isLinePay) return getBool(c, KEY_LINE_PAY, true);

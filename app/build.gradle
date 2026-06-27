@@ -10,8 +10,8 @@ android {
         applicationId 'com.enyu.autoledger'
         minSdk 26
         targetSdk 35
-        versionCode 35
-        versionName '1.0.0-v35-linepay-calendar'
+        versionCode 36
+        versionName '1.0.0-v36-month-ledger-calculator'
     }
 
     signingConfigs {
