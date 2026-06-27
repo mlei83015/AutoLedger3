@@ -137,7 +137,7 @@ public class MainActivity extends Activity {
         } else if (ACTION_QUICK_INCOME.equals(action)) {
             root.postDelayed(() -> showManual("income"), 120);
         } else if (ACTION_QUICK_CALCULATOR.equals(action)) {
-            root.postDelayed(() -> showManual("expense"), 120);
+            root.postDelayed(() -> showCalculatorTool(), 120);
         } else if (ACTION_EDIT_WIDGET_PHOTO.equals(action)) {
             root.postDelayed(() -> showWidgetImageSettingsDialog(), 160);
         }
@@ -179,13 +179,22 @@ public class MainActivity extends Activity {
             if (calendarFocusedDayMillis > 0) showCalendarDay(calendarFocusedDayMillis);
             else showCalendarMonth(calendarMonthMillis);
         }
+        else if (tab == 5) showCalculatorTool();
         else showSettings();
     }
 
     private void setPage(View v) {
+        nav.setVisibility(View.VISIBLE);
         content.removeAllViews();
         content.addView(v, new LinearLayout.LayoutParams(-1, -1));
         rebuildNav();
+    }
+
+    private void setPageFull(View v) {
+        content.removeAllViews();
+        content.addView(v, new LinearLayout.LayoutParams(-1, -1));
+        nav.removeAllViews();
+        nav.setVisibility(View.GONE);
     }
 
     private ScrollView pageBase() {
@@ -487,13 +496,9 @@ public class MainActivity extends Activity {
         expense.setOnClickListener(v -> showManual("expense"));
         Button income = bigAction("↑\n收入\n記錄收入", GREEN, TEAL);
         income.setOnClickListener(v -> showManual("income"));
-        Button calculator = bigAction("÷\n計算機\n分攤", SOFT_BLUE, PURPLE);
-        calculator.setOnClickListener(v -> showManual("expense"));
         quick.addView(expense, new LinearLayout.LayoutParams(0, dp(82), 1));
-        quick.addView(new View(this), new LinearLayout.LayoutParams(dp(8), 1));
+        quick.addView(new View(this), new LinearLayout.LayoutParams(dp(12), 1));
         quick.addView(income, new LinearLayout.LayoutParams(0, dp(82), 1));
-        quick.addView(new View(this), new LinearLayout.LayoutParams(dp(8), 1));
-        quick.addView(calculator, new LinearLayout.LayoutParams(0, dp(82), 1));
         box.addView(quick, marginLp(-1, -2, 0, 0, 0, dp(12)));
 
         LinearLayout recordHeader = new LinearLayout(this);
@@ -530,37 +535,8 @@ public class MainActivity extends Activity {
         ScrollView scroll = pageBase();
         LinearLayout box = pageBox(scroll);
         box.setPadding(dp(14), dp(8), dp(14), dp(16));
-
-        LinearLayout top = new LinearLayout(this);
-        top.setGravity(Gravity.CENTER_VERTICAL);
-        TextView back = text("×", 28, TEXT, true);
-        back.setGravity(Gravity.CENTER);
-        back.setBackground(round(CHIP, dp(16), BORDER));
-        back.setOnClickListener(v -> showHome());
-        top.addView(back, new LinearLayout.LayoutParams(dp(38), dp(42)));
-
-        LinearLayout monthControls = new LinearLayout(this);
-        monthControls.setGravity(Gravity.CENTER_VERTICAL);
-        TextView prev = text("‹", 28, TEXT, true);
-        prev.setGravity(Gravity.CENTER);
-        prev.setBackground(round(CHIP, dp(16), BORDER));
-        prev.setOnClickListener(v -> showCalendarMonth(calendarMonthOffset(calendarMonthMillis, -1)));
-        monthControls.addView(prev, marginLp(dp(40), dp(38), 0, 0, dp(8), 0));
-
-        TextView title = text(formatCalendarMonth(calendarMonthMillis) + " ▾", 22, TEXT, true);
-        title.setGravity(Gravity.CENTER);
-        title.setOnClickListener(v -> showMonthPickerDialog(calendarMonthMillis, picked -> showCalendarMonth(picked)));
-        monthControls.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
-
-        TextView next = text("›", 28, TEXT, true);
-        next.setGravity(Gravity.CENTER);
-        next.setBackground(round(CHIP, dp(16), BORDER));
-        next.setOnClickListener(v -> showCalendarMonth(calendarMonthOffset(calendarMonthMillis, 1)));
-        monthControls.addView(next, marginLp(dp(40), dp(38), dp(8), 0, 0, 0));
-        top.addView(monthControls, new LinearLayout.LayoutParams(0, -2, 1));
-        TextView spacer = text("", 1, TEXT, false);
-        top.addView(spacer, new LinearLayout.LayoutParams(dp(38), dp(42)));
-        box.addView(top, marginLp(-1, -2, 0, 0, 0, dp(10)));
+        addCalendarTopBar(box, formatCalendarMonth(calendarMonthMillis) + " ▾", true);
+        attachCalendarMonthSwipe(scroll);
 
         long monthStart = calendarMonthMillis;
         long monthEnd = calendarMonthOffset(monthStart, 1);
@@ -591,6 +567,70 @@ public class MainActivity extends Activity {
 
         addCalendarGrid(box, monthStart, monthTxs);
         setPage(scroll);
+    }
+
+    private void addCalendarTopBar(LinearLayout box, String titleText, boolean monthMode) {
+        LinearLayout top = new LinearLayout(this);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+
+        TextView close = text("×", 25, TEXT, true);
+        close.setGravity(Gravity.CENTER);
+        close.setBackground(round(CHIP, dp(15), BORDER));
+        close.setOnClickListener(v -> showHome());
+        top.addView(close, new LinearLayout.LayoutParams(dp(38), dp(38)));
+
+        TextView today = text("今天", 13, TEXT, true);
+        today.setGravity(Gravity.CENTER);
+        today.setBackground(round(isDarkMode() ? 0xFF202B37 : 0xFFF1F3F6, dp(15), BORDER));
+        today.setOnClickListener(v -> {
+            if (calendarFocusedDayMillis > 0) showCalendarDay(System.currentTimeMillis());
+            else showCalendarMonth(System.currentTimeMillis());
+        });
+        top.addView(today, marginLp(dp(58), dp(36), dp(8), 0, dp(8), 0));
+
+        TextView title = text(titleText, monthMode ? 20 : 17, TEXT, true);
+        title.setGravity(Gravity.CENTER);
+        title.setSingleLine(true);
+        title.setEllipsize(TextUtils.TruncateAt.END);
+        title.setOnClickListener(v -> {
+            if (monthMode) showMonthPickerDialog(calendarMonthMillis, picked -> showCalendarMonth(picked));
+            else showCalendarMonth(calendarMonthMillis);
+        });
+        top.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
+
+        TextView bell = text("🔔", 20, TEXT, false);
+        bell.setGravity(Gravity.CENTER);
+        bell.setBackground(round(CHIP, dp(15), BORDER));
+        bell.setOnClickListener(v -> showNotificationSettingsDialog());
+        top.addView(bell, marginLp(dp(38), dp(38), dp(8), 0, 0, 0));
+
+        TextView more = text("⋯", 24, MUTED, true);
+        more.setGravity(Gravity.CENTER);
+        more.setOnClickListener(v -> showSideMenu());
+        top.addView(more, new LinearLayout.LayoutParams(dp(34), dp(38)));
+
+        box.addView(top, marginLp(-1, -2, 0, 0, 0, dp(10)));
+    }
+
+    private void attachCalendarMonthSwipe(View target) {
+        final float[] startX = new float[]{0f};
+        final float[] startY = new float[]{0f};
+        target.setOnTouchListener((v, event) -> {
+            if (event.getAction() == MotionEvent.ACTION_DOWN) {
+                startX[0] = event.getX();
+                startY[0] = event.getY();
+                return false;
+            }
+            if (event.getAction() == MotionEvent.ACTION_UP) {
+                float dx = event.getX() - startX[0];
+                float dy = event.getY() - startY[0];
+                if (Math.abs(dx) > dp(72) && Math.abs(dx) > Math.abs(dy) * 1.4f) {
+                    showCalendarMonth(calendarMonthOffset(calendarMonthMillis, dx < 0 ? 1 : -1));
+                    return true;
+                }
+            }
+            return false;
+        });
     }
 
     private LinearLayout calendarMetric(String label, String value, int color) {
@@ -703,22 +743,7 @@ public class MainActivity extends Activity {
         ScrollView scroll = pageBase();
         LinearLayout box = pageBox(scroll);
         box.setPadding(dp(14), dp(8), dp(14), dp(16));
-
-        LinearLayout top = new LinearLayout(this);
-        top.setGravity(Gravity.CENTER_VERTICAL);
-        TextView back = text("‹", 32, TEXT, false);
-        back.setGravity(Gravity.CENTER);
-        back.setOnClickListener(v -> showCalendarMonth(calendarMonthMillis));
-        top.addView(back, new LinearLayout.LayoutParams(dp(38), dp(42)));
-        TextView title = text(formatCalendarDate(calendarFocusedDayMillis), 20, TEXT, true);
-        title.setGravity(Gravity.CENTER);
-        top.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
-        TextView home = text("⌂", 23, TEXT, true);
-        home.setGravity(Gravity.CENTER);
-        home.setBackground(round(CHIP, dp(16), BORDER));
-        home.setOnClickListener(v -> showHome());
-        top.addView(home, new LinearLayout.LayoutParams(dp(40), dp(38)));
-        box.addView(top, marginLp(-1, -2, 0, 0, 0, dp(10)));
+        addCalendarTopBar(box, formatCalendarDate(calendarFocusedDayMillis), false);
 
         long dayStart = calendarFocusedDayMillis;
         long dayEnd = calendarDayOffset(dayStart, 1);
@@ -1164,7 +1189,7 @@ public class MainActivity extends Activity {
 
         ScrollView scroll = pageBase();
         LinearLayout box = pageBox(scroll);
-        box.setPadding(dp(16), dp(8), dp(16), dp(10));
+        box.setPadding(dp(16), dp(8), dp(16), dp(12));
 
         LinearLayout top = new LinearLayout(this);
         top.setGravity(Gravity.CENTER_VERTICAL);
@@ -1172,70 +1197,87 @@ public class MainActivity extends Activity {
         back.setGravity(Gravity.CENTER);
         back.setOnClickListener(v -> showHome());
         top.addView(back, new LinearLayout.LayoutParams(dp(38), dp(38)));
-        TextView title = text("手動新增", 20, TEXT, true);
-        title.setGravity(Gravity.CENTER);
-        top.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
-        TextView more = text("⋯", 24, MUTED, true);
-        more.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
-        top.addView(more, new LinearLayout.LayoutParams(dp(38), dp(38)));
-        box.addView(top, marginLp(-1, -2, 0, 0, 0, dp(8)));
 
         LinearLayout seg = new LinearLayout(this);
         seg.setOrientation(LinearLayout.HORIZONTAL);
-        Button expenseBtn = pill("↓  支出", !startIncome ? TEAL : CHIP, !startIncome ? 0xFFFFFFFF : TEXT);
-        Button incomeBtn = pill("↑  收入", startIncome ? PURPLE : CHIP, startIncome ? 0xFFFFFFFF : TEXT);
+        seg.setPadding(dp(3), dp(3), dp(3), dp(3));
+        seg.setBackground(round(isDarkMode() ? 0xFF222A34 : 0xFFECEFF4, dp(16), BORDER));
+        Button expenseBtn = smallChip("支出", !startIncome ? ORANGE : Color.TRANSPARENT, !startIncome ? 0xFFFFFFFF : TEXT);
+        Button incomeBtn = smallChip("收入", startIncome ? SOFT_BLUE : Color.TRANSPARENT, startIncome ? 0xFFFFFFFF : TEXT);
         expenseBtn.setOnClickListener(v -> showManual("expense"));
         incomeBtn.setOnClickListener(v -> showManual("income"));
-        seg.addView(expenseBtn, marginLp(0, dp(48), 0, 0, dp(8), 0, 1));
-        seg.addView(incomeBtn, marginLp(0, dp(48), dp(8), 0, 0, 0, 1));
-        box.addView(seg, marginLp(-1, -2, 0, 0, 0, dp(10)));
+        seg.addView(expenseBtn, new LinearLayout.LayoutParams(0, dp(38), 1));
+        seg.addView(incomeBtn, new LinearLayout.LayoutParams(0, dp(38), 1));
+        top.addView(seg, marginLp(0, dp(44), dp(22), 0, dp(22), 0, 1));
 
-        final EditText amountInput = edit("金額，例如 120", true);
-        amountInput.setTextSize(24);
-        amountInput.setInputType(InputType.TYPE_CLASS_NUMBER);
-        amountInput.setTextColor(TEXT);
-        box.addView(label("金額"));
-        box.addView(amountInput, marginLp(-1, dp(50), 0, 0, 0, dp(8)));
-        addCalculatorPad(box, amountInput);
-
-        final EditText categoryInput = edit(startIncome ? "分類，例如 薪水、零用錢" : "分類，例如 餐飲、交通", false);
-        box.addView(label("分類"));
-        box.addView(categoryInput, marginLp(-1, dp(48), 0, 0, 0, dp(8)));
-
-        final EditText merchantInput = edit(startIncome ? "來源，例如 打工、家人、朋友" : "店家 / 項目，例如 早餐、全家、捷運", false);
-        box.addView(label(startIncome ? "來源" : "店家 / 項目"));
-        box.addView(merchantInput, marginLp(-1, dp(48), 0, 0, 0, dp(8)));
-
-        final String[] noteValue = new String[]{""};
-        final TextView noteChip = smallChip("＋ 備註（可選）", CHIP, MUTED);
-        noteChip.setGravity(Gravity.CENTER_VERTICAL);
-        noteChip.setPadding(dp(14), 0, dp(14), 0);
-        noteChip.setOnClickListener(v -> showNoteDialog(noteValue, noteChip));
-        box.addView(noteChip, marginLp(-1, dp(42), 0, 0, 0, dp(8)));
+        TextView more = text("⋯", 24, MUTED, true);
+        more.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        more.setOnClickListener(v -> showToolSearchDialog());
+        top.addView(more, new LinearLayout.LayoutParams(dp(38), dp(38)));
+        box.addView(top, marginLp(-1, -2, 0, 0, 0, dp(8)));
 
         final long[] selectedTime = new long[]{System.currentTimeMillis()};
-        LinearLayout dateCard = new LinearLayout(this);
-        dateCard.setOrientation(LinearLayout.HORIZONTAL);
-        dateCard.setGravity(Gravity.CENTER_VERTICAL);
-        dateCard.setPadding(dp(12), 0, dp(12), 0);
-        dateCard.setBackground(round(CARD, dp(18), BORDER));
-        TextView calIcon = text("📅", 20, TEXT, false);
+        LinearLayout dateRow = new LinearLayout(this);
+        dateRow.setOrientation(LinearLayout.HORIZONTAL);
+        dateRow.setGravity(Gravity.CENTER_VERTICAL);
+        dateRow.setPadding(dp(12), 0, dp(12), 0);
+        dateRow.setBackground(round(isDarkMode() ? 0xFF15202B : 0xFFFFFFFF, dp(17), BORDER));
+        TextView calIcon = text("📅", 17, TEXT, false);
         calIcon.setGravity(Gravity.CENTER);
-        dateCard.addView(calIcon, new LinearLayout.LayoutParams(dp(34), -1));
-        TextView dateValue = text(formatFullDateMinute(selectedTime[0]), 18, TEXT, true);
+        dateRow.addView(calIcon, new LinearLayout.LayoutParams(dp(30), -1));
+        TextView dateValue = text(formatFullDateMinute(selectedTime[0]), 14, TEXT, true);
         dateValue.setSingleLine(true);
-        dateCard.addView(dateValue, new LinearLayout.LayoutParams(0, -2, 1));
-        TextView dateArrow = text("›", 25, MUTED, true);
+        dateRow.addView(dateValue, new LinearLayout.LayoutParams(0, -2, 1));
+        TextView dateArrow = text("›", 20, MUTED, true);
         dateArrow.setGravity(Gravity.CENTER);
-        dateCard.addView(dateArrow, new LinearLayout.LayoutParams(dp(24), -1));
-        dateCard.setOnClickListener(v -> showDateTimePicker(selectedTime, dateValue));
-        box.addView(label("日期 / 時間"));
-        box.addView(dateCard, marginLp(-1, dp(50), 0, 0, 0, dp(10)));
+        dateRow.addView(dateArrow, new LinearLayout.LayoutParams(dp(22), -1));
+        dateRow.setOnClickListener(v -> showDateTimePicker(selectedTime, dateValue));
+        box.addView(dateRow, marginLp(-1, dp(42), 0, 0, 0, dp(12)));
 
-        TextView quickTitle = text("快速常用項目", 13, MUTED, true);
-        quickTitle.setPadding(0, 0, 0, dp(4));
-        box.addView(quickTitle);
-        addPresetHorizontal(box, startIncome, categoryInput, merchantInput);
+        final String[] selectedCategory = new String[]{defaultManualCategory(startIncome)};
+        TextView categoryIcon = text(iconFor(selectedCategory[0]), 26, startIncome ? SOFT_BLUE : ORANGE, false);
+        categoryIcon.setGravity(Gravity.CENTER);
+        TextView categoryBadge = text(selectedCategory[0], 12, startIncome ? SOFT_BLUE : ORANGE, true);
+        categoryBadge.setGravity(Gravity.CENTER);
+        addManualCategoryGrid(box, startIncome, selectedCategory, categoryIcon, categoryBadge);
+
+        final String[] expr = new String[]{""};
+        final int[] amountValue = new int[]{0};
+        LinearLayout amountPanel = new LinearLayout(this);
+        amountPanel.setOrientation(LinearLayout.HORIZONTAL);
+        amountPanel.setGravity(Gravity.CENTER_VERTICAL);
+        amountPanel.setPadding(dp(14), dp(10), dp(14), dp(10));
+        amountPanel.setBackground(round(isDarkMode() ? 0xFF1A232E : 0xFFFFFFFF, dp(3), BORDER));
+
+        LinearLayout leftInfo = new LinearLayout(this);
+        leftInfo.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout moneyLine = new LinearLayout(this);
+        moneyLine.setGravity(Gravity.CENTER_VERTICAL);
+        moneyLine.addView(categoryIcon, new LinearLayout.LayoutParams(dp(32), dp(32)));
+        TextView currency = text("TWD", 12, 0xFFFFFFFF, true);
+        currency.setGravity(Gravity.CENTER);
+        currency.setBackground(round(isDarkMode() ? 0xFF46515E : 0xFF8A9099, dp(6)));
+        moneyLine.addView(currency, marginLp(dp(48), dp(28), dp(8), 0, dp(8), 0));
+        TextView amountText = text("$0", 24, TEXT, true);
+        amountText.setSingleLine(true);
+        moneyLine.addView(amountText, new LinearLayout.LayoutParams(0, -2, 1));
+        leftInfo.addView(moneyLine);
+        leftInfo.addView(categoryBadge, marginLp(dp(96), dp(24), 0, dp(6), 0, 0));
+        amountPanel.addView(leftInfo, new LinearLayout.LayoutParams(0, -2, 1));
+
+        View divider = new View(this);
+        divider.setBackgroundColor(BORDER);
+        amountPanel.addView(divider, marginLp(dp(1), dp(62), dp(10), 0, dp(10), 0));
+
+        final EditText noteInput = edit("輸入備註", false);
+        noteInput.setSingleLine(true);
+        noteInput.setTextSize(15);
+        amountPanel.addView(noteInput, new LinearLayout.LayoutParams(0, dp(52), 1));
+        box.addView(amountPanel, marginLp(-1, -2, 0, dp(4), 0, dp(10)));
+
+        TextView expressionText = text("輸入金額，或用 ÷ 分攤", 12, MUTED, false);
+        expressionText.setGravity(Gravity.RIGHT);
+        box.addView(expressionText, marginLp(-1, -2, 0, 0, 0, dp(8)));
 
         final Switch addIncomeToBudget = new Switch(this);
         if (startIncome) {
@@ -1247,25 +1289,22 @@ public class MainActivity extends Activity {
             TextView bonusText = text("加回目前剩餘餘額", 13, TEXT, true);
             bonusRow.addView(bonusText, new LinearLayout.LayoutParams(0, -2, 1));
             bonusRow.addView(addIncomeToBudget);
-            box.addView(bonusRow, marginLp(-1, dp(44), 0, dp(8), 0, dp(8)));
+            box.addView(bonusRow, marginLp(-1, dp(42), 0, 0, 0, dp(8)));
         }
 
-        Button save = bigSave("✓  確認新增");
-        save.setOnClickListener(v -> {
-            String amountText = amountInput.getText().toString().trim().replace(",", "");
-            int amount;
-            try { amount = Integer.parseInt(amountText); } catch (Exception e) { amount = 0; }
+        View.OnClickListener saveRecord = v -> {
+            int amount = amountValue[0];
+            if (amount <= 0 && expr[0].length() > 0) amount = evaluateMoneyExpression(expr[0]);
             if (amount <= 0) {
                 Toast.makeText(this, "請輸入正確金額", Toast.LENGTH_SHORT).show();
                 return;
             }
             boolean income = "income".equals(manualDirection);
-            String category = categoryInput.getText().toString().trim();
-            String merchant = merchantInput.getText().toString().trim();
-            String note = noteValue[0] == null ? "" : noteValue[0].trim();
+            String category = selectedCategory[0] == null ? "" : selectedCategory[0].trim();
+            String note = noteInput.getText().toString().trim();
+            String merchant = note.isEmpty() ? category : note;
             if (category.isEmpty()) category = income ? "收入" : "未分類";
-            // V31：快速常用項目只填分類；店家 / 項目如果沒有手動輸入就保持空白。
-            Transaction tx = new Transaction(selectedTime[0], amount, income ? "income" : "expense", "手動新增", merchant, category, note, "manual-" + selectedTime[0] + "-" + System.currentTimeMillis());
+            Transaction tx = new Transaction(selectedTime[0], amount, income ? "income" : "expense", "手動新增", merchant, category, note, "manual-" + selectedTime[0] + "-" + System.currentTimeMillis(), iconFor(category));
             TransactionStore.add(this, tx);
             if (income && addIncomeToBudget.isChecked()) {
                 AppSettings.addToCurrentRemainingBalance(this, amount);
@@ -1275,10 +1314,230 @@ public class MainActivity extends Activity {
             }
             homeMonthMillis = selectedTime[0];
             showHome();
-        });
-        box.addView(save, marginLp(-1, dp(54), 0, dp(12), 0, 0));
+        };
+        addManualCalculatorPad(box, expr, amountValue, amountText, expressionText, saveRecord);
 
         setPage(scroll);
+    }
+
+    private String defaultManualCategory(boolean income) {
+        List<String> items = manualCategoryList(income);
+        return items.isEmpty() ? (income ? "收入" : "早餐") : items.get(0);
+    }
+
+    private List<String> manualCategoryList(boolean income) {
+        String[] defaults = income
+                ? new String[]{"薪水", "零用錢", "獎金", "回饋", "退款", "家人", "投資", "現金", "其他"}
+                : new String[]{"早餐", "午餐", "晚餐", "飲品", "點心", "交通", "購物", "娛樂", "日用品", "房租", "醫療", "數位", "社交", "禮物", "未分類"};
+        ArrayList<String> out = new ArrayList<>();
+        for (String item : defaults) if (!out.contains(item)) out.add(item);
+        List<String> saved = income ? AppSettings.getIncomeCategories(this) : AppSettings.getExpenseCategories(this);
+        for (String item : saved) {
+            if (item == null) continue;
+            String clean = item.trim();
+            if (!clean.isEmpty() && !out.contains(clean)) out.add(clean);
+        }
+        return out;
+    }
+
+    private void addManualCategoryGrid(LinearLayout box, boolean income, String[] selectedCategory, TextView categoryIcon, TextView categoryBadge) {
+        int active = income ? SOFT_BLUE : ORANGE;
+        categoryBadge.setTextColor(active);
+        categoryBadge.setPadding(dp(12), 0, dp(12), 0);
+        categoryBadge.setBackground(round(income ? 0x3327B9E8 : 0x33FFB24A, dp(13), Color.TRANSPARENT));
+
+        LinearLayout grid = new LinearLayout(this);
+        grid.setOrientation(LinearLayout.VERTICAL);
+        grid.setPadding(0, dp(2), 0, dp(2));
+        ArrayList<Button> buttons = new ArrayList<>();
+        List<String> items = manualCategoryList(income);
+        for (int i = 0; i < items.size(); i += 4) {
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            for (int j = 0; j < 4; j++) {
+                int index = i + j;
+                if (index >= items.size()) {
+                    row.addView(new View(this), marginLp(0, dp(70), dp(3), dp(3), dp(3), dp(3), 1));
+                    continue;
+                }
+                String name = items.get(index);
+                Button b = manualCategoryButton(name, income, name.equals(selectedCategory[0]));
+                buttons.add(b);
+                b.setOnClickListener(v -> {
+                    selectedCategory[0] = name;
+                    categoryIcon.setText(iconFor(name));
+                    categoryBadge.setText(name);
+                    for (Button other : buttons) {
+                        String tag = String.valueOf(other.getTag());
+                        boolean picked = tag.equals(name);
+                        styleManualCategoryButton(other, tag, income, picked);
+                    }
+                });
+                row.addView(b, marginLp(0, dp(70), dp(3), dp(3), dp(3), dp(3), 1));
+            }
+            grid.addView(row);
+        }
+        box.addView(grid, marginLp(-1, -2, 0, 0, 0, dp(8)));
+    }
+
+    private Button manualCategoryButton(String name, boolean income, boolean picked) {
+        Button b = new Button(this);
+        b.setAllCaps(false);
+        b.setTextSize(13);
+        b.setGravity(Gravity.CENTER);
+        b.setSingleLine(false);
+        b.setPadding(dp(2), dp(4), dp(2), dp(4));
+        b.setTag(name);
+        styleManualCategoryButton(b, name, income, picked);
+        return b;
+    }
+
+    private void styleManualCategoryButton(Button b, String name, boolean income, boolean picked) {
+        int active = income ? SOFT_BLUE : ORANGE;
+        int bg = picked ? (income ? 0x3327B9E8 : 0x33FFB24A) : Color.TRANSPARENT;
+        int stroke = picked ? active : Color.TRANSPARENT;
+        b.setText(iconFor(name) + "\n" + name);
+        b.setTextColor(picked ? active : TEXT);
+        b.setTypeface(Typeface.DEFAULT, picked ? Typeface.BOLD : Typeface.NORMAL);
+        b.setBackground(round(bg, dp(18), stroke));
+    }
+
+    private void addManualCalculatorPad(LinearLayout box, String[] expr, int[] amountValue, TextView amountText, TextView expressionText, View.OnClickListener saveRecord) {
+        LinearLayout pad = new LinearLayout(this);
+        pad.setOrientation(LinearLayout.VERTICAL);
+        pad.setPadding(0, dp(2), 0, 0);
+        String[][] rows = new String[][]{
+                {"7", "8", "9", "÷"},
+                {"4", "5", "6", "×"},
+                {"1", "2", "3", "-"},
+                {"00", "0", ".", "+"},
+                {"AC", "⌫", "OK"}
+        };
+        for (String[] rowLabels : rows) {
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            for (String label : rowLabels) {
+                Button b = calcKey(label, "OK".equals(label));
+                b.setOnClickListener(v -> handleMoneyCalcInput(label, expr, amountValue, amountText, expressionText, saveRecord));
+                row.addView(b, marginLp(0, dp(56), dp(4), dp(4), dp(4), dp(4), "OK".equals(label) ? 2 : 1));
+            }
+            pad.addView(row);
+        }
+        box.addView(pad);
+    }
+
+    private Button calcKey(String label, boolean ok) {
+        int bg;
+        int fg;
+        if (ok) {
+            bg = 0xFFFF6B5F;
+            fg = 0xFFFFFFFF;
+        } else if ("÷×+-".contains(label)) {
+            bg = 0xFF36B6D8;
+            fg = 0xFFFFFFFF;
+        } else {
+            bg = isDarkMode() ? 0xFF1F2B36 : 0xFFF4F6F9;
+            fg = TEXT;
+        }
+        Button b = smallChip(label, bg, fg);
+        b.setTextSize(ok ? 18 : 20);
+        return b;
+    }
+
+    private void handleMoneyCalcInput(String label, String[] expr, int[] amountValue, TextView amountText, TextView expressionText, View.OnClickListener okAction) {
+        if ("OK".equals(label)) {
+            updateMoneyCalcViews(expr, amountValue, amountText, expressionText);
+            if (okAction != null) okAction.onClick(amountText);
+            return;
+        }
+        if ("AC".equals(label) || "C".equals(label)) {
+            expr[0] = "";
+        } else if ("⌫".equals(label)) {
+            if (expr[0].length() > 0) expr[0] = expr[0].substring(0, expr[0].length() - 1);
+        } else if ("=".equals(label)) {
+            int value = evaluateMoneyExpression(expr[0]);
+            if (value > 0) expr[0] = String.valueOf(value);
+        } else {
+            expr[0] += label;
+        }
+        updateMoneyCalcViews(expr, amountValue, amountText, expressionText);
+    }
+
+    private void updateMoneyCalcViews(String[] expr, int[] amountValue, TextView amountText, TextView expressionText) {
+        int value = evaluateMoneyExpression(expr[0]);
+        amountValue[0] = value;
+        amountText.setText(TransactionStore.money(value));
+        if (expr[0].isEmpty()) {
+            expressionText.setText("輸入金額，或用 ÷ 分攤");
+        } else if (value > 0 && !expr[0].equals(String.valueOf(value))) {
+            expressionText.setText(expr[0] + " = " + TransactionStore.money(value));
+        } else {
+            expressionText.setText(expr[0]);
+        }
+    }
+
+    private void showCalculatorTool() {
+        tab = 5;
+        applyModeColors();
+        ScrollView scroll = pageBase();
+        LinearLayout box = pageBox(scroll);
+        box.setPadding(dp(18), dp(10), dp(18), dp(18));
+
+        LinearLayout top = new LinearLayout(this);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        TextView close = text("×", 30, TEXT, true);
+        close.setGravity(Gravity.CENTER);
+        close.setBackground(round(CHIP, dp(16), BORDER));
+        close.setOnClickListener(v -> showHome());
+        top.addView(close, new LinearLayout.LayoutParams(dp(42), dp(42)));
+        TextView title = text("計算機", 22, TEXT, true);
+        title.setGravity(Gravity.CENTER);
+        top.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
+        top.addView(new View(this), new LinearLayout.LayoutParams(dp(42), dp(42)));
+        box.addView(top, marginLp(-1, -2, 0, 0, 0, dp(20)));
+
+        LinearLayout display = new LinearLayout(this);
+        display.setOrientation(LinearLayout.VERTICAL);
+        display.setPadding(dp(18), dp(18), dp(18), dp(16));
+        display.setBackground(round(isDarkMode() ? 0xFF17212C : 0xFFFFFFFF, dp(22), BORDER));
+        final String[] expr = new String[]{""};
+        final int[] amountValue = new int[]{0};
+        TextView amountText = text("$0", 42, TEXT, true);
+        amountText.setGravity(Gravity.RIGHT);
+        amountText.setSingleLine(true);
+        TextView expressionText = text("輸入算式，例如 360÷3", 15, MUTED, false);
+        expressionText.setGravity(Gravity.RIGHT);
+        expressionText.setSingleLine(true);
+        expressionText.setEllipsize(TextUtils.TruncateAt.START);
+        display.addView(expressionText);
+        display.addView(amountText, marginLp(-1, -2, 0, dp(6), 0, 0));
+        box.addView(display, marginLp(-1, -2, 0, 0, 0, dp(16)));
+
+        LinearLayout pad = new LinearLayout(this);
+        pad.setOrientation(LinearLayout.VERTICAL);
+        String[][] rows = new String[][]{
+                {"7", "8", "9", "÷"},
+                {"4", "5", "6", "×"},
+                {"1", "2", "3", "-"},
+                {"00", "0", ".", "+"},
+                {"AC", "⌫", "="}
+        };
+        for (String[] rowLabels : rows) {
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            for (String label : rowLabels) {
+                Button b = calcKey(label, false);
+                if ("=".equals(label)) {
+                    b.setBackground(round(0xFFFFEEE6, dp(18), Color.TRANSPARENT));
+                    b.setTextColor(ORANGE);
+                }
+                b.setOnClickListener(v -> handleMoneyCalcInput(label, expr, amountValue, amountText, expressionText, null));
+                row.addView(b, marginLp(0, dp(62), dp(4), dp(4), dp(4), dp(4), "=".equals(label) ? 2 : 1));
+            }
+            pad.addView(row);
+        }
+        box.addView(pad);
+        setPageFull(scroll);
     }
 
     private void addCalculatorPad(LinearLayout box, EditText amountInput) {
@@ -2037,6 +2296,7 @@ public class MainActivity extends Activity {
 
         panel.addView(sideMenuButton("＋", "快速新增支出", v -> showManual("expense")));
         panel.addView(sideMenuButton("＋", "快速新增收入", v -> showManual("income")));
+        panel.addView(sideMenuButton("÷", "記帳計算機", v -> showCalculatorTool()));
         panel.addView(sideMenuButton("◎", "設定目前剩餘", v -> showRemainingBalanceDialog()));
         panel.addView(sideMenuButton("💸", "欠款紀錄", v -> showDebtTracker()));
         panel.addView(sideMenuButton("💱", "匯率換算", v -> showExchangeConverter()));
@@ -2097,7 +2357,7 @@ public class MainActivity extends Activity {
         ArrayList<MenuAction> actions = new ArrayList<>();
         actions.add(new MenuAction("＋", "快速新增支出", "手動補一筆花費", "支出 花費 手動 新增 記帳", v -> showManual("expense")));
         actions.add(new MenuAction("＋", "快速新增收入", "薪水、零用錢、退款都可以補", "收入 薪水 零用錢 手動 新增", v -> showManual("income")));
-        actions.add(new MenuAction("÷", "記帳計算機", "加減乘除後直接填入金額", "計算機 分攤 加減乘除 算錢 朋友", v -> showManual("expense")));
+        actions.add(new MenuAction("÷", "記帳計算機", "純計算機，適合分帳先算金額", "計算機 分攤 加減乘除 算錢 朋友", v -> showCalculatorTool()));
         actions.add(new MenuAction("◎", "設定目前剩餘", "更新現在實際還剩多少錢", "餘額 剩餘 預算 現在 剩多少", v -> showRemainingBalanceDialog()));
         actions.add(new MenuAction("◔", "財務報表", "支出、收入、結餘與分類分析", "統計 報表 分析 支出 收入 結餘", v -> showStats()));
         actions.add(new MenuAction("💸", "欠款紀錄", "朋友欠款、還款扣除", "欠款 借錢 朋友 還款 同學", v -> showDebtTracker()));
@@ -3361,7 +3621,7 @@ public class MainActivity extends Activity {
         advanced.addView(featureRow("月底預估花費", "依照目前花費速度推估月底可能花多少"));
         box.addView(advanced);
 
-        TextView version = text("AutoLedger V36", 12, MUTED, false);
+        TextView version = text("AutoLedger V37", 12, MUTED, false);
         version.setGravity(Gravity.CENTER);
         version.setPadding(0, dp(16), 0, dp(10));
         box.addView(version);
@@ -3619,11 +3879,11 @@ public class MainActivity extends Activity {
 
     private void showOnboarding() {
         showRoundedInfoDialog(
-                "歡迎使用自動記帳 V36",
+                "歡迎使用自動記帳 V37",
                 "這版新增 / 優化：\n\n" +
-                        "1. 首頁改成月份帳本，可切換年份月份，並用日期分組顯示紀錄。\n" +
-                        "2. 新增記帳計算機，可從首頁、側邊搜尋與 Android 快速開關開啟。\n" +
-                        "3. 修正中國信託 ATM 存款通知，會自動記到收入 / 存款。",
+                        "1. 手動新增改成分類格子＋大按鍵計算機，出門記帳更快。\n" +
+                        "2. 記帳計算機移到三條線與 Android 快速開關，打開就是純計算機。\n" +
+                        "3. 月曆帳本改成左右滑動切月份，頂部工具列會固定保留。",
                 "我知道了",
                 v -> AppSettings.setBool(this, AppSettings.KEY_ONBOARDED, true),
                 "通知用途",

@@ -10,8 +10,8 @@ android {
         applicationId 'com.enyu.autoledger'
         minSdk 26
         targetSdk 35
-        versionCode 36
-        versionName '1.0.0-v36-month-ledger-calculator'
+        versionCode 37
+        versionName '1.0.0-v37-compact-entry-quick-calculator'
     }
 
     signingConfigs {
